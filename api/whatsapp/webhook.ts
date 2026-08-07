@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
-import { saveWhatsAppTransaction } from '../../src/lib/waStore';
+import { saveWhatsAppTransaction } from './store.js';
 
 // Instancia de Gemini AI
 function getGeminiClient() {

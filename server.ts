@@ -648,7 +648,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
     try {
       const ai = getGeminiClient();
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-2.5-flash',
         contents: messageText,
         config: {
           systemInstruction: 'Eres un bot de WhatsApp para finanzas personales. Analiza la transacción y devuelve un JSON financiero.',
