@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getWhatsAppTransactions } from './store';
+import { getWhatsAppTransactions } from '../../src/lib/waStore';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   // Allow CORS for fetching transactions from web app
