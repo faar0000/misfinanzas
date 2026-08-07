@@ -51,23 +51,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (mode === 'subscribe' || token) {
       if (token === expectedVerifyToken) {
-        console.log('[Vercel Webhook] Token de verificación CORRECTO. Devolviendo challenge:', challenge);
-        res.setHeader('Content-Type', 'text/plain');
-        return res.status(200).send(String(challenge || 'ok'));
+        console.log('[Vercel Webhook] Token de verificación CORRECTO. Devolviendo challenge puro:', challenge);
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(200).end(String(challenge || 'ok'));
       } else {
         console.warn(`[Vercel Webhook] Token INCORRECTO. Recibido: "${token}" != Esperado: "${expectedVerifyToken}"`);
-        res.setHeader('Content-Type', 'text/plain');
-        return res.status(403).send('Forbidden: Token mismatch');
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(403).end('Forbidden: Token mismatch');
       }
     }
 
     if (challenge) {
-      res.setHeader('Content-Type', 'text/plain');
-      return res.status(200).send(String(challenge));
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(200).end(String(challenge));
     }
 
-    res.setHeader('Content-Type', 'text/plain');
-    return res.status(200).send('Webhook de WhatsApp en Vercel activo y listo.');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.status(200).end('Webhook de WhatsApp en Vercel activo y listo.');
   }
 
   // 2. PROCESAMIENTO DE MENSAJES ENTRANTES (POST)

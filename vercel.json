@@ -2,19 +2,7 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/whatsapp/webhook",
-      "destination": "/api/whatsapp/webhook"
-    },
-    {
-      "source": "/api/webhook",
-      "destination": "/api/webhook"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
