@@ -95,6 +95,15 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     return matchesSearch && matchesType;
   });
 
+  // Sort transactions by date descending (most recent to oldest)
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    const dateComparison = (b.fecha || '').localeCompare(a.fecha || '');
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+    return (b.id || '').localeCompare(a.id || '');
+  });
+
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
@@ -107,7 +116,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             Historial de Operaciones
           </h2>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {transactions.length} registros almacenados
+            {transactions.length} registros almacenados • Ordenados de más reciente a más antiguo
           </p>
         </div>
 
@@ -143,13 +152,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
       </div>
 
       {/* Table */}
-      {filteredTransactions.length === 0 ? (
+      {sortedTransactions.length === 0 ? (
         <div className="text-center py-10 text-slate-400 text-xs italic">
           No se encontraron registros que coincidan con la búsqueda.
         </div>
       ) : (
         <div className="divide-y divide-slate-100">
-          {filteredTransactions.map((tx) => {
+          {sortedTransactions.map((tx) => {
             const isExpanded = expandedId === tx.id;
             const mainCategory = tx.items[0]?.categoria_principal || 'General';
 

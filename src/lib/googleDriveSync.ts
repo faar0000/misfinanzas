@@ -6,26 +6,6 @@ export interface GoogleDriveSyncResult {
   syncedAt: string;
 }
 
-async function handleApiError(res: Response, actionName: string): Promise<never> {
-  const errText = await res.text();
-  if (typeof window !== 'undefined' && (res.status === 401 || res.status === 403)) {
-    localStorage.removeItem('asistente_financiero_google_token');
-  }
-
-  if (res.status === 401) {
-    throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta haciendo clic en "Conectar con Google Drive".');
-  }
-
-  if (errText.includes('accessNotConfigured') || errText.includes('has not been used in project') || errText.includes('PERMISSION_DENIED')) {
-    throw new Error(
-      '403 API_DISABLED: La API de Google Drive / Sheets no está habilitada en el proyecto de Google Cloud o el token pertenece a un proyecto anterior.\n\n' +
-      'Se ha limpiado el token guardado. Por favor, haz clic en "Conectar con Google Drive" para sincronizar nuevamente.'
-    );
-  }
-
-  throw new Error(`Error en ${actionName}: ${errText}`);
-}
-
 /**
  * Searches for an existing Google Sheet by name in Google Drive, or creates a new one.
  */
@@ -35,7 +15,7 @@ export async function getOrCreateFinancialSpreadsheet(
 ): Promise<{ id: string; url: string }> {
   // 1. Search in Drive
   const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime desc`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink)`;
 
   const searchRes = await fetch(searchUrl, {
     headers: {
@@ -44,7 +24,11 @@ export async function getOrCreateFinancialSpreadsheet(
   });
 
   if (!searchRes.ok) {
-    await handleApiError(searchRes, 'buscar archivo en Google Drive');
+    const errText = await searchRes.text();
+    if (searchRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
+    throw new Error(`Error buscando archivo en Google Drive: ${errText}`);
   }
 
   const searchData = await searchRes.json();
@@ -86,7 +70,11 @@ export async function getOrCreateFinancialSpreadsheet(
   });
 
   if (!createRes.ok) {
-    await handleApiError(createRes, 'crear planilla en Google Sheets');
+    const errText = await createRes.text();
+    if (createRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
+    throw new Error(`Error creando planilla en Google Sheets: ${errText}`);
   }
 
   const newSheetData = await createRes.json();
@@ -153,7 +141,11 @@ export async function syncDataToGoogleSheets(
   });
 
   if (!txRes.ok) {
-    await handleApiError(txRes, 'actualizar pestaña Transacciones');
+    const errText = await txRes.text();
+    if (txRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
+    throw new Error(`Error actualizando pestaña Transacciones: ${errText}`);
   }
 
   // Summary sheet rows
@@ -187,7 +179,11 @@ export async function syncDataToGoogleSheets(
   });
 
   if (!sumRes.ok) {
-    await handleApiError(sumRes, 'actualizar pestaña Resumen Presupuesto');
+    const errText = await sumRes.text();
+    if (sumRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
+    throw new Error(`Error actualizando pestaña Resumen Presupuesto: ${errText}`);
   }
 
   return {
@@ -196,108 +192,3 @@ export async function syncDataToGoogleSheets(
     syncedAt: new Date().toLocaleTimeString('es-PE'),
   };
 }
-
-/**
- * Reads transactions from the 'Transacciones' sheet in Google Sheets.
- */
-export async function fetchTransactionsFromGoogleSheets(
-  accessToken: string,
-  spreadsheetId: string
-): Promise<TransactionRecord[]> {
-  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A2:K1000`;
-  const res = await fetch(getUrl, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!res.ok) {
-    return [];
-  }
-
-  const data = await res.json();
-  const rows: string[][] = data.values || [];
-  const items: TransactionRecord[] = [];
-
-  for (const row of rows) {
-    if (!row || row.length < 2) continue;
-    const [id, fecha, tipo, montoTotalStr, metodo, cuotasStr, cuotaMensualStr, alerta, dineroLibre, detalle, mensaje] = row;
-    if (!id || !fecha) continue;
-
-    const parseNum = (val: string) => {
-      if (!val) return 0;
-      const clean = val.replace(/[^0-9.,-]/g, '').replace(',', '.');
-      return parseFloat(clean) || 0;
-    };
-
-    items.push({
-      id: String(id),
-      fecha: String(fecha),
-      tipo_operacion: (tipo === 'INGRESO' ? 'INGRESO' : 'GASTO') as any,
-      monto_total: parseNum(montoTotalStr),
-      metodo_pago: (metodo as any) || 'DEBITO',
-      cuotas: parseInt(cuotasStr || '1', 10) || 1,
-      monto_cuota_mensual: parseNum(cuotaMensualStr),
-      items: [
-        {
-          concepto: detalle || 'Sincronizado desde Google Sheets',
-          monto: parseNum(montoTotalStr),
-          categoria_principal: tipo === 'INGRESO' ? 'Ingresos' : 'Variables',
-          subcategoria: 'Google Sheets',
-        },
-      ],
-      alerta_ahorro_comprometido: alerta?.includes('SÍ') || false,
-      dinero_libre_restante: parseNum(dineroLibre),
-      mensaje_usuario: mensaje || 'Sincronizado desde Google Sheets',
-      titulo_resumen: detalle || 'Transacción de Sheets',
-      estado_pago: 'PAGADO',
-    });
-  }
-
-  return items;
-}
-
-/**
- * Moves duplicate spreadsheets named 'Control Financiero Personal' to trash, keeping only keepSpreadsheetId.
- */
-export async function cleanDuplicateSpreadsheets(
-  accessToken: string,
-  keepSpreadsheetId: string,
-  title: string = 'Control Financiero Personal'
-): Promise<number> {
-  const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
-
-  const searchRes = await fetch(searchUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!searchRes.ok) return 0;
-
-  const searchData = await searchRes.json();
-  const files: Array<{ id: string; name: string }> = searchData.files || [];
-
-  let trashedCount = 0;
-  for (const file of files) {
-    if (file.id !== keepSpreadsheetId) {
-      try {
-        const patchRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ trashed: true }),
-        });
-        if (patchRes.ok) {
-          trashedCount++;
-        }
-      } catch (e) {
-        console.warn('Error moving duplicate file to trash:', e);
-      }
-    }
-  }
-
-  return trashedCount;
-}
-

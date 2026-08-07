@@ -9,18 +9,7 @@ import {
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Configuración dinámica de Firebase (soporta Variables de Entorno de Vercel o archivo local)
-const env = (import.meta as any).env || {};
-const dynamicFirebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId,
-  appId: env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
-};
-
-const app = getApps().length > 0 ? getApp() : initializeApp(dynamicFirebaseConfig);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 export const SCOPES = [
@@ -62,7 +51,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('No se pudo obtener el token de acceso de Google. Revisa tus permisos.');
+      throw new Error('No se pudo obtener el token de acceso de Google');
     }
 
     cachedAccessToken = credential.accessToken;
@@ -72,28 +61,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Error de autenticación Google:', error);
-    const code = error?.code || '';
-    const originDomain = typeof window !== 'undefined' ? window.location.hostname : 'tu-dominio.com';
-
-    if (code === 'auth/unauthorized-domain') {
-      throw new Error(
-        `⚠️ DOMINIO NO AUTORIZADO EN FIREBASE:\n\nEl dominio "${originDomain}" no está registrado en Firebase Auth.\n\n` +
-        `Para solucionarlo en Vercel:\n` +
-        `1. Ve a Firebase Console -> Authentication -> Settings -> Authorized domains\n` +
-        `2. Haz clic en "Add domain" e ingresa "${originDomain}"\n` +
-        `3. Vuelve a intentar el inicio de sesión.`
-      );
-    } else if (code === 'auth/operation-not-allowed') {
-      throw new Error(
-        `⚠️ GOOGLE SIGN-IN NO DESHABILITADO EN FIREBASE:\n\nDebes activar el proveedor de inicio de sesión de Google en Firebase Console -> Authentication -> Sign-in method -> Google.`
-      );
-    } else if (code === 'auth/popup-closed-by-user') {
-      throw new Error('La ventana de inicio de sesión fue cerrada antes de completar la autenticación.');
-    } else if (code === 'auth/cancelled-popup-request') {
-      throw new Error('Solicitud de ventana emergente cancelada por otra petición en curso.');
-    }
-
-    throw new Error(error?.message || 'Error desconocido al conectar con Google Drive.');
+    throw error;
   } finally {
     isSigningIn = false;
   }

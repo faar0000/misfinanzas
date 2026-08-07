@@ -4,6 +4,7 @@ import {
   CATEGORIAS_BASE,
   TransactionRecord,
 } from '../types';
+import { getNormalizedCategoryName } from '../lib/financial';
 import {
   Target,
   PiggyBank,
@@ -63,118 +64,35 @@ export const normalizeCategoryToId = (
   esGastoFijo?: boolean,
   metodoPago?: string
 ): string => {
-  const c = (catName || '').toLowerCase().trim();
-  const s = (subcatName || '').toLowerCase().trim();
-  const e = (extraText || '').toLowerCase().trim();
-  const text = `${c} ${s} ${e}`;
-
-  if (
-    c === 'credito_compromisos' ||
-    c.includes('crédito y compromisos') ||
-    c.includes('credito y compromisos') ||
-    text.includes('tarjeta') ||
-    text.includes('cuota') ||
-    text.includes('préstamo') ||
-    text.includes('prestamo') ||
-    text.includes('compromiso')
-  ) {
-    return 'credito_compromisos';
-  }
-
-  if (
-    c === 'gastos_hormiga' ||
-    c.includes('gastos hormiga') ||
-    text.includes('hormiga') ||
-    text.includes('antojo') ||
-    text.includes('snack') ||
-    text.includes('chatarra') ||
-    text.includes('dulces') ||
-    text.includes('capricho') ||
-    text.includes('delivery no planificado')
-  ) {
-    return 'gastos_hormiga';
-  }
-
-  if (
-    c === 'alimentacion' ||
-    c.includes('alimentación') ||
-    text.includes('alimentac') ||
-    text.includes('comida') ||
-    text.includes('dieta') ||
-    text.includes('supermercado') ||
-    text.includes('abarrotes') ||
-    text.includes('viveres') ||
-    text.includes('víveres') ||
-    text.includes('proteína') ||
-    text.includes('plaza vea') ||
-    text.includes('wong') ||
-    text.includes('metro') ||
-    text.includes('tottus') ||
-    text.includes('vivanda')
-  ) {
-    return 'alimentacion';
-  }
-
-  if (
-    c === 'vehiculo' ||
-    c.includes('vehículo') ||
-    text.includes('vehic') ||
-    text.includes('auto') ||
-    text.includes('carro') ||
-    text.includes('gasolina') ||
-    text.includes('cochera') ||
-    text.includes('combustible') ||
-    text.includes('peaje') ||
-    text.includes('mantenimiento preventivo')
-  ) {
-    return 'vehiculo';
-  }
-
-  if (
-    c === 'ocio_salidas' ||
-    c.includes('ocio y salidas') ||
-    text.includes('ocio') ||
-    text.includes('salida') ||
-    text.includes('cine') ||
-    text.includes('viaje') ||
-    text.includes('pasatiempo') ||
-    text.includes('restaurante') ||
-    text.includes('bar')
-  ) {
-    return 'ocio_salidas';
-  }
-
-  if (
-    c === 'servicios_fijos' ||
-    c.includes('servicios y gastos fijos') ||
-    text.includes('alquiler') ||
-    text.includes('luz') ||
-    text.includes('agua') ||
-    text.includes('internet') ||
-    text.includes('teléfono') ||
-    text.includes('telefono') ||
-    text.includes('suscripcion') ||
-    text.includes('suscripción') ||
-    text.includes('gimnasio') ||
-    text.includes('gym') ||
-    text.includes('mantenimiento edificio') ||
-    text.includes('arbitrios') ||
-    text.includes('colegio') ||
-    text.includes('pension') ||
-    text.includes('pensión')
-  ) {
-    return 'servicios_fijos';
-  }
-
-  if (metodoPago === 'CREDITO') {
-    return 'credito_compromisos';
-  }
-
   if (esGastoFijo) {
     return 'servicios_fijos';
   }
 
-  return 'alimentacion'; // Balanced neutral default for unclassified groceries/items
+  if (metodoPago === 'CREDITO') {
+    const resolvedName = getNormalizedCategoryName(catName, subcatName, '', extraText);
+    if (resolvedName !== 'Alimentación y Dieta' && resolvedName !== 'Gastos Hormiga y Antojos') {
+      return 'credito_compromisos';
+    }
+  }
+
+  const normalizedName = getNormalizedCategoryName(catName, subcatName, '', extraText);
+
+  switch (normalizedName) {
+    case 'Alimentación y Dieta':
+      return 'alimentacion';
+    case 'Gastos Hormiga y Antojos':
+      return 'gastos_hormiga';
+    case 'Vehículo':
+      return 'vehiculo';
+    case 'Servicios y Gastos Fijos':
+      return 'servicios_fijos';
+    case 'Ocio y Salidas':
+      return 'ocio_salidas';
+    case 'Crédito y Compromisos':
+      return 'credito_compromisos';
+    default:
+      return 'alimentacion';
+  }
 };
 
 export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({

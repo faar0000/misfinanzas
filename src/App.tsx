@@ -19,18 +19,15 @@ import { FinancialAnalyticsChart } from './components/FinancialAnalyticsChart';
 import { BudgetSettingsModal } from './components/BudgetSettingsModal';
 import { UpcomingDueDateReminderBanner } from './components/UpcomingDueDateReminderBanner';
 import { CategoryBudgetsPage } from './components/CategoryBudgetsPage';
-import { WhatsAppBotModal } from './components/WhatsAppBotModal';
 import {
   initAuth,
   googleSignIn,
   logoutGoogle,
 } from './lib/googleAuth';
-import { getLatestFixedExpenses } from './lib/financial';
+import { getLatestFixedExpenses, getRecurringConceptKey, areSameRecurringConcept } from './lib/financial';
 import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
-  fetchTransactionsFromGoogleSheets,
-  cleanDuplicateSpreadsheets,
 } from './lib/googleDriveSync';
 import {
   Home,
@@ -47,7 +44,6 @@ import {
   Filter,
   Target,
   RefreshCw,
-  MessageSquare,
 } from 'lucide-react';
 
 const DEFAULT_CATEGORY_BUDGETS: Record<string, number> = {
@@ -183,6 +179,14 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
   },
 ];
 
+const sortTransactionsByDateDesc = (txs: TransactionRecord[]): TransactionRecord[] => {
+  return [...txs].sort((a, b) => {
+    const dateComp = (b.fecha || '').localeCompare(a.fecha || '');
+    if (dateComp !== 0) return dateComp;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+};
+
 export default function App() {
   // Load initial states from localStorage if present
   const [config, setConfig] = useState<BudgetConfig>(() => {
@@ -192,7 +196,8 @@ export default function App() {
 
   const [transactions, setTransactions] = useState<TransactionRecord[]>(() => {
     const saved = localStorage.getItem('asistente_financiero_txs');
-    return saved ? JSON.parse(saved) : SAMPLE_TRANSACTIONS;
+    const rawList = saved ? JSON.parse(saved) : SAMPLE_TRANSACTIONS;
+    return sortTransactionsByDateDesc(rawList);
   });
 
   const [lastTransaction, setLastTransaction] = useState<TransactionRecord | null>(
@@ -211,7 +216,6 @@ export default function App() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'inicio' | 'presupuestos' | 'historial' | 'proyeccion' | 'graficos'>('inicio');
 
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>(() => {
@@ -266,11 +270,8 @@ export default function App() {
         setAccessToken(res.accessToken);
         triggerDriveSync(res.accessToken, transactions);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Login de Google falló:', err);
-      if (err?.message && !err.message.includes('cerrada antes de completar')) {
-        alert(err.message);
-      }
     }
   };
 
@@ -313,26 +314,10 @@ export default function App() {
         localStorage.setItem('asistente_financiero_sheet_url', sheetUrl);
       }
 
-      // Try fetching remote transactions from Google Sheet to merge with local state
-      let combinedTxs = [...txsToSync];
-      try {
-        const remoteTxs = await fetchTransactionsFromGoogleSheets(activeToken, sheetId);
-        if (remoteTxs.length > 0) {
-          const localIds = new Set(txsToSync.map((t) => t.id));
-          const newFromSheet = remoteTxs.filter((rt) => !localIds.has(rt.id));
-          if (newFromSheet.length > 0) {
-            combinedTxs = [...newFromSheet, ...txsToSync];
-            setTransactions(combinedTxs);
-          }
-        }
-      } catch (err) {
-        console.warn('Error al leer de Google Sheets:', err);
-      }
-
       const syncRes = await syncDataToGoogleSheets(
         activeToken,
         sheetId,
-        combinedTxs,
+        txsToSync,
         budgetSummary,
         config.monedaSimbolo
       );
@@ -346,52 +331,16 @@ export default function App() {
     } catch (err: any) {
       console.warn('Sincronización con Google Drive:', err?.message || err);
       const msg = String(err?.message || err || '');
-      if (
-        msg.includes('401') ||
-        msg.includes('403') ||
-        msg.includes('UNAUTHENTICATED') ||
-        msg.includes('API_DISABLED') ||
-        msg.includes('authentication credentials') ||
-        msg.includes('accessNotConfigured') ||
-        msg.includes('Google Drive API has not been used')
-      ) {
+      if (msg.includes('401') || msg.includes('UNAUTHENTICATED') || msg.includes('authentication credentials')) {
         setAccessToken(null);
-        setGoogleUser(null);
         localStorage.removeItem('asistente_financiero_google_token');
-        if (msg.includes('API_DISABLED') || msg.includes('accessNotConfigured') || msg.includes('Google Drive API has not been used')) {
-          if (isManual) {
-            alert('⚠️ Token o proyecto anterior caducado:\n\nSe ha limpiado el token de sesión guardado. Vamos a volver a conectar tu cuenta con Google Drive.');
-            await handleGoogleLogin();
-          }
-        } else if (isManual) {
+        if (isManual) {
           alert('Tu sesión de Google ha expirado. Vamos a volver a conectar tu cuenta.');
           await handleGoogleLogin();
         }
       } else if (isManual) {
         alert(`Ocurrió un problema al sincronizar con Google Drive: ${err?.message || 'Error de conexión'}`);
       }
-    } finally {
-      setIsDriveSyncing(false);
-    }
-  };
-
-  const handleCleanDuplicates = async () => {
-    const activeToken = accessToken || localStorage.getItem('asistente_financiero_google_token');
-    const activeSheetId = spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id');
-    if (!activeToken || !activeSheetId) {
-      alert('Debes conectar Google Drive primero.');
-      return;
-    }
-    try {
-      setIsDriveSyncing(true);
-      const trashedCount = await cleanDuplicateSpreadsheets(activeToken, activeSheetId);
-      if (trashedCount > 0) {
-        alert(`🧹 Se han movido ${trashedCount} planilla(s) duplicada(s) a la papelera en tu Google Drive.\n\nSe mantendrá únicamente la planilla activa cargada en esta aplicación.`);
-      } else {
-        alert('✨ No se encontraron planillas duplicadas en tu Google Drive. Tu base de datos está limpia e integrada.');
-      }
-    } catch (err: any) {
-      alert(`Error al depurar duplicados en Drive: ${err?.message || 'Error de conexión'}`);
     } finally {
       setIsDriveSyncing(false);
     }
@@ -406,65 +355,6 @@ export default function App() {
     localStorage.setItem('asistente_financiero_txs', JSON.stringify(transactions));
   }, [transactions]);
 
-  // Sincronización automática periódica de transacciones recibidas por WhatsApp
-  useEffect(() => {
-    let isMounted = true;
-    const syncWhatsAppTransactions = async () => {
-      // No realizar peticiones si la pestaña está oculta o en segundo plano
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return;
-      }
-      try {
-        const res = await fetch('/api/whatsapp/transactions');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.success && Array.isArray(data.transactions) && data.transactions.length > 0) {
-          const localIds = new Set(transactions.map((t) => t.id));
-          const newRemoteTxs = data.transactions
-            .map((item: any) => item.transaction || item)
-            .filter((tx: any) => tx && tx.id && !localIds.has(tx.id));
-
-          if (newRemoteTxs.length > 0 && isMounted) {
-            setTransactions((prev) => {
-              const prevIds = new Set(prev.map((t) => t.id));
-              const toAdd = newRemoteTxs.filter((tx: any) => !prevIds.has(tx.id));
-              if (toAdd.length === 0) return prev;
-              return [...toAdd, ...prev];
-            });
-
-            const latest = newRemoteTxs[0];
-            setSuccessNotification({
-              titulo: '¡Nuevo registro desde WhatsApp! 📱',
-              mensaje: latest.mensaje_usuario || `Se registró ${latest.tipo_operacion?.toLowerCase()} de S/. ${latest.monto_total}`,
-              monto: latest.monto_total,
-              tipo: latest.tipo_operacion || 'GASTO',
-              esGastoFijo: latest.es_gasto_fijo,
-              estadoPago: latest.estado_pago,
-            });
-
-            const token = accessToken || localStorage.getItem('asistente_financiero_google_token');
-            if (token) {
-              triggerDriveSync(token, [...newRemoteTxs, ...transactions]);
-            }
-          }
-        }
-      } catch {
-        // Ignorar errores de sondeo en segundo plano
-      }
-    };
-
-    // Ejecutar una vez al cargar
-    syncWhatsAppTransactions();
-
-    // Consultar cada 15 segundos en lugar de cada 4 segundos para evitar saturación de logs
-    const interval = setInterval(syncWhatsAppTransactions, 15000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [accessToken]);
-
   // Compute live budget summary based on actual cash flows and last paid month value for recurring services
   let ingresosCobradosTotal = 0;
   let cuotasCredito = 0;
@@ -472,6 +362,8 @@ export default function App() {
   let gastosVariables = 0;
   let gastosEjecutadosReal = 0;
   let gastosPendientesTotal = 0;
+
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
 
   // Compute fixed expenses baseline using the exact value of the last paid month for variable services
   const latestFixedExpensesList = getLatestFixedExpenses(transactions);
@@ -482,28 +374,32 @@ export default function App() {
   );
 
   transactions.forEach((tx) => {
+    const isCurrentMonth = !tx.fecha || tx.fecha.startsWith(currentMonthStr);
+
     if (tx.tipo_operacion === 'INGRESO') {
-      ingresosCobradosTotal += tx.monto_total;
+      if (isCurrentMonth) {
+        ingresosCobradosTotal += tx.monto_total;
+      }
     } else if (tx.tipo_operacion === 'GASTO') {
       const esPendiente = tx.estado_pago === 'PENDIENTE';
 
       if (tx.metodo_pago === 'CREDITO' && tx.cuotas > 1) {
         cuotasCredito += tx.monto_cuota_mensual;
-        if (!esPendiente) {
+        if (isCurrentMonth && !esPendiente) {
           gastosEjecutadosReal += tx.monto_cuota_mensual;
-        } else {
+        } else if (esPendiente) {
           gastosPendientesTotal += tx.monto_cuota_mensual;
           cuotasCreditoPendientes += tx.monto_cuota_mensual;
         }
       } else {
         // Variable non-fixed expense (e.g. supermarket, dining out)
-        if (!fixedExpensesIdSet.has(tx.id)) {
+        if (isCurrentMonth && !fixedExpensesIdSet.has(tx.id)) {
           gastosVariables += tx.monto_total;
         }
 
         if (esPendiente) {
           gastosPendientesTotal += tx.monto_total;
-        } else {
+        } else if (isCurrentMonth) {
           gastosEjecutadosReal += tx.monto_total;
         }
       }
@@ -511,7 +407,6 @@ export default function App() {
   });
 
   // Calculate fixed expenses paid in the current month to avoid double counting
-  const currentMonthStr = new Date().toISOString().slice(0, 7);
   const gastosFijosPagadosEsteMes = transactions
     .filter(
       (t) =>
@@ -662,6 +557,7 @@ export default function App() {
           allText.includes('gas') ||
           allText.includes('telefono') ||
           allText.includes('teléfono') ||
+          allText.includes('celular') ||
           allText.includes('suscripc') ||
           allText.includes('colegio') ||
           allText.includes('pension') ||
@@ -669,7 +565,19 @@ export default function App() {
           allText.includes('gym') ||
           allText.includes('gimnasio') ||
           allText.includes('seguro') ||
-          allText.includes('arbitrios'));
+          allText.includes('arbitrios') ||
+          allText.includes('netflix') ||
+          allText.includes('spotify') ||
+          allText.includes('icloud') ||
+          allText.includes('prime') ||
+          allText.includes('disney') ||
+          allText.includes('hbo') ||
+          allText.includes('paramount') ||
+          allText.includes('youtube') ||
+          allText.includes('max') ||
+          allText.includes('apple') ||
+          allText.includes('cada mes') ||
+          allText.includes('de cada mes'));
 
       if (hasFixedKeywords || typeof isGastoFijo !== 'boolean') {
         isGastoFijo = hasFixedKeywords || Boolean(isGastoFijo);
@@ -681,18 +589,27 @@ export default function App() {
 
       const userText = (params.textPrompt || '').toLowerCase();
       const isFutureCommitmentText =
-        userText.includes('tengo que pagar') ||
-        userText.includes('debo pagar') ||
-        userText.includes('vence el') ||
-        userText.includes('los dias') ||
-        userText.includes('los días') ||
-        userText.includes('de cada mes');
+        allText.includes('tengo que pagar') ||
+        allText.includes('debo pagar') ||
+        allText.includes('vence el') ||
+        allText.includes('los dias') ||
+        allText.includes('los días') ||
+        allText.includes('de cada mes') ||
+        allText.includes('cada mes') ||
+        allText.includes('para el día') ||
+        allText.includes('para el dia') ||
+        allText.includes('el día') ||
+        allText.includes('el dia');
 
       if (isFutureCommitmentText || parsedData.estado_pago === 'PENDIENTE') {
-        estadoPago = 'PENDIENTE';
+        estadoPago = parsedData.estado_pago || 'PENDIENTE';
         isGastoFijo = true; // Scheduled commitments are recurring fixed expenses
 
-        const matchDay = userText.match(/(?:el|días|dias|día|dia)\s*(\d{1,2})/i) || userText.match(/(\d{1,2})\s*de\s*cada\s*mes/i);
+        const textToMatch = userText || allText;
+        const matchDay =
+          textToMatch.match(/(\d{1,2})\s*de\s*cada\s*mes/i) ||
+          textToMatch.match(/(?:el|días|dias|día|dia|para|vence)\s*(\d{1,2})/i);
+
         if (matchDay && matchDay[1]) {
           const parsedDay = parseInt(matchDay[1], 10);
           if (parsedDay >= 1 && parsedDay <= 31) {
@@ -726,7 +643,7 @@ export default function App() {
         dia_pago_mensual: diaPago,
       };
 
-      const updatedTxs = [newRecord, ...transactions];
+      const updatedTxs = sortTransactionsByDateDesc([newRecord, ...transactions]);
       setTransactions(updatedTxs);
       setLastTransaction(newRecord);
 
@@ -758,25 +675,6 @@ export default function App() {
     }
   };
 
-  const handleNewWhatsAppTransaction = (tx: TransactionRecord) => {
-    const updatedTxs = [tx, ...transactions];
-    setTransactions(updatedTxs);
-    setLastTransaction(tx);
-    setSuccessNotification({
-      titulo: '¡Registro Recibido desde WhatsApp! 📱',
-      mensaje: tx.mensaje_usuario || 'Transacción registrada con éxito.',
-      monto: tx.monto_total,
-      tipo: tx.tipo_operacion,
-      esGastoFijo: tx.es_gasto_fijo,
-      estadoPago: tx.estado_pago,
-      diaPago: tx.dia_pago_mensual,
-    });
-    const token = accessToken || localStorage.getItem('asistente_financiero_google_token');
-    if (token) {
-      triggerDriveSync(token, updatedTxs);
-    }
-  };
-
   const handleDeleteTransaction = (id: string) => {
     const updated = transactions.filter((t) => t.id !== id);
     setTransactions(updated);
@@ -790,7 +688,9 @@ export default function App() {
   };
 
   const handleUpdateTransaction = (id: string, updatedFields: Partial<TransactionRecord>) => {
-    const updated = transactions.map((t) => (t.id === id ? { ...t, ...updatedFields } : t));
+    const updated = sortTransactionsByDateDesc(
+      transactions.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))
+    );
     setTransactions(updated);
     if (lastTransaction?.id === id) {
       setLastTransaction((prev) => (prev ? { ...prev, ...updatedFields } : null));
@@ -801,9 +701,45 @@ export default function App() {
     }
   };
 
+  const handleCancelFixedExpense = (tx: TransactionRecord) => {
+    const targetKey = getRecurringConceptKey(tx);
+    const updated = sortTransactionsByDateDesc(
+      transactions.map((t) => {
+        if (
+          t.id === tx.id ||
+          getRecurringConceptKey(t) === targetKey ||
+          areSameRecurringConcept(t, tx)
+        ) {
+          return {
+            ...t,
+            es_gasto_fijo: false,
+            frecuencia_recurrencia: 'PUNTUAL' as const,
+          };
+        }
+        return t;
+      })
+    );
+    setTransactions(updated);
+
+    const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
+    setSuccessNotification({
+      titulo: `Gasto Fijo / Suscripción Cancelado: ${title}`,
+      mensaje: 'Removido de tus compromisos fijos mensuales. Tus presupuestos y proyecciones se han recalculado automáticamente.',
+      monto: tx.monto_total,
+      tipo: 'GASTO',
+      esGastoFijo: false,
+    });
+
+    const token = accessToken || localStorage.getItem('asistente_financiero_google_token');
+    if (token) {
+      triggerDriveSync(token, updated);
+    }
+  };
+
   const handleResetSampleData = () => {
-    setTransactions(SAMPLE_TRANSACTIONS);
-    setLastTransaction(SAMPLE_TRANSACTIONS[SAMPLE_TRANSACTIONS.length - 1]);
+    const sortedSample = sortTransactionsByDateDesc(SAMPLE_TRANSACTIONS);
+    setTransactions(sortedSample);
+    setLastTransaction(sortedSample[0] || null);
     setConfig(INITIAL_CONFIG);
   };
 
@@ -878,16 +814,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 px-2">
-            <button
-              onClick={() => setIsWhatsAppModalOpen(true)}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-3 py-1 rounded-full font-semibold transition-colors cursor-pointer shadow-xs"
-              title="Abrir Bot de WhatsApp y Webhook"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Bot WhatsApp</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
-            </button>
-
             {isDriveSyncing ? (
               <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 text-[11px] px-2.5 py-1 rounded-full font-mono font-semibold animate-pulse border border-emerald-300 dark:border-emerald-800">
                 <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
@@ -924,7 +850,6 @@ export default function App() {
             onLogin={handleGoogleLogin}
             onLogout={handleGoogleLogout}
             onManualSync={() => triggerDriveSync(null, undefined, true)}
-            onCleanDuplicates={handleCleanDuplicates}
           />
         </div>
 
@@ -1167,6 +1092,7 @@ export default function App() {
               monedaSimbolo={config.monedaSimbolo}
               ingresoMensual={config.ingresoMensual}
               onUpdateTransaction={handleUpdateTransaction}
+              onCancelFixedExpense={handleCancelFixedExpense}
             />
           </div>
         )}
@@ -1211,13 +1137,6 @@ export default function App() {
           config={config}
           onSaveConfig={(newConfig) => setConfig(newConfig)}
           onResetSampleData={handleResetSampleData}
-        />
-
-        {/* WhatsApp Bot & Webhook Modal */}
-        <WhatsAppBotModal
-          isOpen={isWhatsAppModalOpen}
-          onClose={() => setIsWhatsAppModalOpen(false)}
-          onNewTransactionFromWhatsApp={handleNewWhatsAppTransaction}
         />
       </div>
     </div>

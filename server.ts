@@ -234,9 +234,9 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
 
 3. Desglose de Boletas / Comprobantes (Visión / OCR):
    - Si se incluye una imagen de boleta o ticket, analiza CADA ÍTEM individualmente.
-   - Separa alimentos planificados o de dieta en "Alimentación y Dieta" (subcategoría ej: "Supermercado", "Insumos de dieta estructurada").
-   - Separa artículos de limpieza, aseo personal o del hogar en "Hogar y Aseo" o "Limpieza", PERO NO los clasifiques como gasto fijo recurrente mensual, ya que son compras ocasionales/bimensuales.
-   - Separa antojos, chatarra, snacks o caprichos espontáneos en "Gastos Hormiga y Antojos".
+   - Clasifica como "Alimentación y Dieta": todo alimento saludable o planificado (Proteínas, Insumos de Dieta, Frutas, Lácteos, Verduras, Carnes, Abarrotes de supermercado, Víveres, Huevos, Pan, etc.).
+   - Clasifica como "Gastos Hormiga y Antojos" ÚNICAMENTE: Comida chatarra, galletas, golosinas, cerveza, licores, pollo a la brasa, pizza, hamburguesas, gaseosas, snacks, postres o caprichos espontáneos.
+   - Separa artículos de limpieza o empaques en "Alimentación y Dieta" o "Limpieza", PERO NO los clasifiques como gasto fijo recurrente mensual.
 
 4. Lógica de Tarjetas de Crédito, Entidad Financiera y Cuotas:
    - Detección de Entidad Financiera / Banco: Extrae el nombre del banco o tarjeta si se menciona (ej: "Interbank", "BCP", "BBVA", "Scotiabank", "Diners", "American Express", "CMR", "Tarjeta Oh!", "Dinero / Efectivo"). Asigna este valor en 'entidad_financiera'.
@@ -271,18 +271,19 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
      * Si es una transacción simple o un solo producto o ingreso: usa el concepto claro (ej: "50% Sueldo de Julio", "Alquiler de departamento", "Laptop de trabajo").
 
 7. Clasificación Estricta de Gasto Fijo Recurrente vs Compra Ocasional/Puntual (Proyección de Caja):
-   - Solo asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL" a compromisos obligatorios e ineludibles que se pagan TODOS LOS MESES de forma incondicional (Alquiler de vivienda, Mantenimiento de condominio/edificio, Servicios básicos como Luz, Agua, Internet, Plan móvil, Colegio/Pensiones educativas, Suscripciones activas como Netflix/Spotify/Gimnasio, Seguros mensuales y Cuotas fijas).
+   - Asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL" a compromisos u obligaciones periódicas que se pagan todos los meses (Alquiler de vivienda, Mantenimiento de condominio/edificio, Servicios básicos como Luz, Agua, Internet, Plan móvil, Colegio/Pensiones educativas, Suscripciones digitales como Netflix, Spotify, Prime, Disney, iCloud, Gimnasio, Seguros mensuales, o cualquier pago que especifique "día X de cada mes", "para el día X" o "cada mes").
    - NO clasifiques como gasto fijo recurrente mensual (asigna es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL"):
      * Artículos de limpieza, detergentes, desinfectantes, aseo personal o del hogar (ya que se compran habitualmente cada 2 o 3 meses de forma variable u ocasional).
      * Víveres de supermercado, abarrotes, restaurantes, caprichos/gastos hormiga, ropa, viajes o electrodomésticos.
 
 8. Detección de Estado de Pago (Transacción Ejecutada vs Compromiso Programado Pendiente):
    - Evalúa si el usuario está indicando una compra/pago ya realizado o un compromiso de pago a futuro programado:
-     * Si la frase expresa una obligación/compromiso a futuro (ej: "tengo que pagar el 21 de cada mes", "mi alquiler vence el 25", "tengo un gasto fijo de 782 para el 21"):
-       - Asigna estado_pago = "PENDIENTE".
-       - Extrae el día del mes correspondiente en dia_pago_mensual (ej: 21).
-       - En mensaje_usuario, aclara empáticamente: "Se registró tu Gasto Fijo Programado de S/. 782.00 para el día 21 de cada mes. Estado: Pendiente de pago. Este monto no se descuenta de tu saldo de banco hoy, pero ya se encuentra reservado en tu Proyección de Caja."
-     * Si la frase o boleta indica un pago ya realizado (ej: "Pagué el alquiler", "Compré...", "Hoy se cobró..."):
+     * Si la frase expresa una obligación/compromiso a futuro o recurrente (ej: "Netflix por S/. 61.80 para el día 9 de cada mes", "tengo que pagar el 21 de cada mes", "mi alquiler vence el 25"):
+       - Asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL".
+       - Asigna estado_pago = "PENDIENTE" (salvo que explicite que ya lo pagó).
+       - Extrae el día del mes correspondiente en dia_pago_mensual (ej: 9).
+       - En mensaje_usuario, aclara empáticamente: "Se registró tu Gasto Fijo Programado de S/. 61.80 para el día 9 de cada mes. Estado: Pendiente de pago. Se encuentra reservado en tus Gastos Fijos Recurrentes."
+     * Si la frase o boleta indica un pago ya realizado (ej: "Pagué Netflix", "Pagué el alquiler", "Compré..."):
        - Asigna estado_pago = "PAGADO".
 
 9. Formato de Salida JSON Estricto:
@@ -431,46 +432,31 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
-      let attempts = 0;
-      const maxAttempts = 2;
-      while (attempts < maxAttempts) {
-        try {
-          attempts++;
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: { parts: contentsParts },
-            config: {
-              systemInstruction,
-              responseMimeType: 'application/json',
-              responseSchema,
-              temperature: 0.2,
-            },
-          });
-          responseText = response.text || '{}';
-          lastError = null;
-          break; // Success! Break out of retry loop
-        } catch (err: any) {
-          lastError = err;
-          console.warn(`[Gemini API] Intent ${attempts} con modelo '${modelName}' falló:`, err?.message || err);
-          const isTransient =
-            err?.status === 503 ||
-            err?.code === 503 ||
-            err?.message?.includes('503') ||
-            err?.message?.includes('high demand') ||
-            err?.status === 429 ||
-            err?.code === 429;
-          if (isTransient && attempts < maxAttempts) {
-            // Wait brief moment before retrying
-            await new Promise((res) => setTimeout(res, 800));
-          } else {
-            // Move to next model immediately
-            break;
-          }
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts: contentsParts },
+          config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            responseSchema,
+            temperature: 0.2,
+          },
+        });
+        responseText = response.text || '{}';
+        lastError = null;
+        if (responseText && responseText !== '{}') {
+          break; // Successfully got response from Gemini
         }
-      }
-
-      if (responseText && !lastError) {
-        break; // Successfully got response
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err?.message || String(err);
+        const isQuotaError = errMsg.includes('429') || errMsg.includes('quota') || err?.status === 429 || err?.code === 429;
+        if (isQuotaError) {
+          console.log(`[Gemini API] Quota/rate-limit reached for model '${modelName}'. Trying next model or fallback.`);
+        } else {
+          console.warn(`[Gemini API] Model '${modelName}' error: ${errMsg.slice(0, 150)}`);
+        }
       }
     }
 
@@ -501,282 +487,6 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
       success: true,
       data: fallback,
     });
-  }
-});
-
-// ==========================================
-// WHATSAPP BOT INTEGRATION & WEBHOOK ROUTES
-// ==========================================
-const whatsappTransactionsStore: Array<{
-  id: string;
-  phone: string;
-  rawMessage: string;
-  transaction: any;
-  createdAt: string;
-}> = [];
-
-// Helper to format WhatsApp bot reply
-function formatWhatsAppReply(parsed: any): string {
-  const isIngreso = parsed.tipo_operacion === 'INGRESO';
-  const icon = isIngreso ? '🟢' : '🔴';
-  const tipoLabel = isIngreso ? 'INGRESO' : 'GASTO';
-  const itemConcepto = parsed.items?.[0]?.concepto || parsed.titulo_resumen || 'Registro financiero';
-  const monto = (parsed.monto_total || 0).toFixed(2);
-  const metodo = parsed.metodo_pago || 'DEBITO';
-  const bancoStr = parsed.entidad_financiera ? ` (${parsed.entidad_financiera})` : '';
-
-  let reply = `${icon} *${tipoLabel} REGISTRADO EN TU CUENTA*\n\n`;
-  reply += `📌 *Concepto:* ${itemConcepto}\n`;
-  reply += `💰 *Monto:* S/. ${monto}\n`;
-  reply += `💳 *Medio:* ${metodo}${bancoStr}\n`;
-
-  if (parsed.cuotas && parsed.cuotas > 1) {
-    reply += `📊 *Cuotas:* ${parsed.cuota_actual || 1}/${parsed.cuotas} (S/. ${(parsed.monto_cuota_mensual || 0).toFixed(2)}/mes)\n`;
-  }
-
-  if (parsed.estado_pago === 'PENDIENTE') {
-    reply += `⏰ *Estado:* Programado Pendiente (Día ${parsed.dia_pago_mensual || 21})\n`;
-  } else {
-    reply += `✅ *Estado:* Confirmado y Ejecutado\n`;
-  }
-
-  reply += `\n💬 _${parsed.mensaje_usuario || 'Sincronizado con tu tablero financiero y Google Sheets.'}_`;
-  return reply;
-}
-
-// Meta WhatsApp Webhook Verification (GET / HEAD)
-app.get(['/api/whatsapp/webhook', '/api/whatsapp/webhook/'], (req, res) => {
-  // Parse searchParams directly from raw URL to bypass Express query parser object nesting
-  const rawUrl = req.originalUrl || req.url;
-  const parsedUrl = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
-  const searchParams = parsedUrl.searchParams;
-
-  const hubQuery = (req.query.hub || {}) as Record<string, any>;
-
-  const mode =
-    searchParams.get('hub.mode') ||
-    req.query['hub.mode'] ||
-    hubQuery.mode ||
-    req.query['mode'];
-
-  const token =
-    searchParams.get('hub.verify_token') ||
-    req.query['hub.verify_token'] ||
-    hubQuery.verify_token ||
-    req.query['verify_token'];
-
-  const challenge =
-    searchParams.get('hub.challenge') ||
-    req.query['hub.challenge'] ||
-    hubQuery.challenge ||
-    req.query['challenge'];
-
-  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'asistente_financiero_token';
-
-  console.log('[WhatsApp Webhook Verification Request]', {
-    rawUrl,
-    mode,
-    token,
-    challenge,
-    expectedToken
-  });
-
-  // If token is provided or mode is subscribe, verify token
-  if (token) {
-    if (String(token).trim() === expectedToken) {
-      console.log('[WhatsApp Webhook] Token de verificación VÁLIDO. Devolviendo challenge:', challenge);
-      return res.status(200).header('Content-Type', 'text/plain').send(String(challenge || 'ok'));
-    } else {
-      console.warn(`[WhatsApp Webhook] Token INVÁLIDO. Recibido: "${token}" != Esperado: "${expectedToken}"`);
-      return res.status(403).header('Content-Type', 'text/plain').send('Forbidden: Token mismatch');
-    }
-  }
-
-  // If Meta sends challenge directly without token parameter
-  if (challenge) {
-    console.log('[WhatsApp Webhook] Devolviendo challenge directo:', challenge);
-    return res.status(200).header('Content-Type', 'text/plain').send(String(challenge));
-  }
-
-  // Fallback for general browser GET
-  return res.status(200).header('Content-Type', 'text/plain').send('WhatsApp Webhook Endpoint Ready');
-});
-
-// Meta / Twilio WhatsApp Webhook Handler (POST)
-app.post('/api/whatsapp/webhook', async (req, res) => {
-  try {
-    const body = req.body;
-    let messageText = '';
-    let senderPhone = 'WhatsApp User';
-
-    // Meta WhatsApp Cloud API structure
-    if (body.object === 'whatsapp_business_account') {
-      const entry = body.entry?.[0];
-      const change = entry?.changes?.[0]?.value;
-      const message = change?.messages?.[0];
-      if (message) {
-        senderPhone = message.from || senderPhone;
-        if (message.type === 'text') {
-          messageText = message.text?.body || '';
-        } else if (message.type === 'interactive') {
-          messageText = message.interactive?.button_reply?.title || '';
-        }
-      }
-    } else if (body.Body) {
-      // Twilio WhatsApp structure
-      messageText = body.Body;
-      senderPhone = body.From || senderPhone;
-    } else if (body.message) {
-      // Generic JSON webhook
-      messageText = body.message;
-      senderPhone = body.phone || senderPhone;
-    }
-
-    if (!messageText) {
-      return res.status(200).json({ status: 'ignored', reason: 'No message text found' });
-    }
-
-    const budgetInfo = {
-      ingresoMensual: 5000,
-      ingresosCobrados: 2500,
-      gastosFijos: 1500,
-      gastosVariables: 1000,
-      cuotasCredito: 300,
-    };
-
-    let parsedData: any = null;
-    try {
-      const ai = getGeminiClient();
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: messageText,
-        config: {
-          systemInstruction: 'Eres un bot de WhatsApp para finanzas personales. Analiza la transacción y devuelve un JSON financiero.',
-          responseMimeType: 'application/json',
-        },
-      });
-      parsedData = JSON.parse(response.text || '{}');
-    } catch {
-      parsedData = parseFallbackTransaction(messageText, 'text', budgetInfo);
-    }
-
-    const txRecord = {
-      id: `wa-tx-${Date.now()}`,
-      fecha: parsedData.fecha || new Date().toISOString().split('T')[0],
-      tipo_operacion: parsedData.tipo_operacion || 'GASTO',
-      monto_total: parsedData.monto_total || 0,
-      metodo_pago: parsedData.metodo_pago || 'DEBITO',
-      cuotas: parsedData.cuotas || 1,
-      monto_cuota_mensual: parsedData.monto_cuota_mensual || parsedData.monto_total || 0,
-      items: parsedData.items || [
-        {
-          concepto: parsedData.titulo_resumen || messageText,
-          monto: parsedData.monto_total || 0,
-          categoria_principal: parsedData.tipo_operacion === 'INGRESO' ? 'Ingresos' : 'Variables',
-          subcategoria: 'WhatsApp Bot',
-        },
-      ],
-      alerta_ahorro_comprometido: parsedData.alerta_ahorro_comprometido || false,
-      dinero_libre_restante: parsedData.dinero_libre_restante || 1500,
-      mensaje_usuario: parsedData.mensaje_usuario || 'Registrado desde WhatsApp',
-      entidad_financiera: parsedData.entidad_financiera || '',
-      es_gasto_fijo: parsedData.es_gasto_fijo || false,
-      frecuencia_recurrencia: parsedData.frecuencia_recurrencia || 'PUNTUAL',
-      estado_pago: parsedData.estado_pago || 'PAGADO',
-      dia_pago_mensual: parsedData.dia_pago_mensual,
-    };
-
-    whatsappTransactionsStore.unshift({
-      id: txRecord.id,
-      phone: senderPhone,
-      rawMessage: messageText,
-      transaction: txRecord,
-      createdAt: new Date().toISOString(),
-    });
-
-    const botReply = formatWhatsAppReply(parsedData);
-
-    return res.status(200).json({
-      status: 'success',
-      replyMessage: botReply,
-      transaction: txRecord,
-    });
-  } catch (err: any) {
-    console.error('[WhatsApp Webhook Error]:', err);
-    return res.status(200).json({ status: 'error', message: err?.message });
-  }
-});
-
-// Fetch transactions recorded via WhatsApp
-app.get('/api/whatsapp/transactions', (req, res) => {
-  res.json({
-    success: true,
-    count: whatsappTransactionsStore.length,
-    transactions: whatsappTransactionsStore,
-  });
-});
-
-// WhatsApp Bot Simulator Endpoint
-app.post('/api/whatsapp/simulate', async (req, res) => {
-  try {
-    const { messageText, phone } = req.body;
-    if (!messageText) {
-      return res.status(400).json({ success: false, error: 'Se requiere el texto del mensaje' });
-    }
-
-    const budgetInfo = {
-      ingresoMensual: 5000,
-      ingresosCobrados: 2500,
-      gastosFijos: 1500,
-      gastosVariables: 1000,
-      cuotasCredito: 300,
-    };
-
-    const parsedData = parseFallbackTransaction(messageText, 'text', budgetInfo);
-
-    const txRecord = {
-      id: `wa-tx-${Date.now()}`,
-      fecha: parsedData.fecha || new Date().toISOString().split('T')[0],
-      tipo_operacion: parsedData.tipo_operacion || 'GASTO',
-      monto_total: parsedData.monto_total || 0,
-      metodo_pago: parsedData.metodo_pago || 'DEBITO',
-      cuotas: parsedData.cuotas || 1,
-      monto_cuota_mensual: parsedData.monto_cuota_mensual || parsedData.monto_total || 0,
-      items: parsedData.items || [
-        {
-          concepto: parsedData.titulo_resumen || messageText,
-          monto: parsedData.monto_total || 0,
-          categoria_principal: parsedData.tipo_operacion === 'INGRESO' ? 'Ingresos' : 'Variables',
-          subcategoria: 'WhatsApp Bot',
-        },
-      ],
-      alerta_ahorro_comprometido: parsedData.alerta_ahorro_comprometido || false,
-      dinero_libre_restante: parsedData.dinero_libre_restante || 1500,
-      mensaje_usuario: parsedData.mensaje_usuario || 'Registrado con éxito desde el Bot de WhatsApp',
-      entidad_financiera: parsedData.entidad_financiera || '',
-      es_gasto_fijo: parsedData.es_gasto_fijo || false,
-      frecuencia_recurrencia: parsedData.frecuencia_recurrencia || 'PUNTUAL',
-      estado_pago: parsedData.estado_pago || 'PAGADO',
-      dia_pago_mensual: parsedData.dia_pago_mensual,
-    };
-
-    whatsappTransactionsStore.unshift({
-      id: txRecord.id,
-      phone: phone || '+51 987 654 321',
-      rawMessage: messageText,
-      transaction: txRecord,
-      createdAt: new Date().toISOString(),
-    });
-
-    const botReply = formatWhatsAppReply(parsedData);
-
-    return res.json({
-      success: true,
-      replyMessage: botReply,
-      transaction: txRecord,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Error simulando mensaje' });
   }
 });
 

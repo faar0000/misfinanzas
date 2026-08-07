@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { CreditCard, Calendar, CheckCircle2, Building2, Filter, Repeat, ShoppingBag, ShieldCheck, HelpCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { CreditCard, Calendar, CheckCircle2, Building2, Filter, Repeat, ShoppingBag, ShieldCheck, HelpCircle, Clock, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { TransactionRecord } from '../types';
-import { getLatestFixedExpenses } from '../lib/financial';
+import { getLatestFixedExpenses, getRecurringConceptKey } from '../lib/financial';
 
 interface FutureInstallmentsProjectionProps {
   transactions: TransactionRecord[];
   monedaSimbolo: string;
   ingresoMensual: number;
   onUpdateTransaction?: (id: string, updatedFields: Partial<TransactionRecord>) => void;
+  onCancelFixedExpense?: (tx: TransactionRecord) => void;
 }
 
 export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjectionProps> = ({
@@ -15,6 +16,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
   monedaSimbolo,
   ingresoMensual,
   onUpdateTransaction,
+  onCancelFixedExpense,
 }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('ALL');
   const [showCriteriaInfo, setShowCriteriaInfo] = useState<boolean>(false);
@@ -27,8 +29,13 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
     }));
   };
 
+  const [confirmCancelTx, setConfirmCancelTx] = useState<TransactionRecord | null>(null);
+
   // 1. Identify Gastos Fijos Recurrentes Mensuales strictly using the last paid month value for variable services (Rent, Utilities, Subscriptions, Maintenance, etc.)
-  const fixedExpensesList = getLatestFixedExpenses(transactions);
+  const rawFixedExpensesList = getLatestFixedExpenses(transactions);
+  const fixedExpensesList = rawFixedExpensesList.filter(
+    (tx) => tx.es_gasto_fijo !== false
+  );
 
   const totalFixedMonthlyAmount = fixedExpensesList.reduce(
     (sum, tx) => sum + (tx.monto_total || 0),
@@ -210,7 +217,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
           </div>
         ) : (
           <div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
               {fixedExpensesList.map((tx) => {
                 const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
                 const subCat = tx.items[0]?.subcategoria || tx.items[0]?.categoria_principal || 'Servicios';
@@ -220,14 +227,24 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 return (
                   <div
                     key={tx.id}
-                    className={`p-3 border rounded-sm flex items-center justify-between ${
+                    className={`p-3.5 border rounded-sm flex items-center justify-between relative group transition-shadow hover:shadow-xs ${
                       isPendiente
                         ? 'bg-amber-50/60 border-amber-300'
                         : 'bg-purple-50/40 border-purple-200'
                     }`}
                   >
+                    {/* Botón X arriba del box para cancelar el gasto fijo / suscripción */}
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCancelTx(tx)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-rose-600 hover:bg-rose-700 active:scale-90 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition-all z-20 border-2 border-white"
+                      title={`Cancelar gasto fijo / suscripción (${title})`}
+                    >
+                      <X className="w-3 h-3 stroke-[3]" />
+                    </button>
+
                     <div>
-                      <div className="font-bold text-xs text-slate-900 truncate max-w-[160px] flex items-center gap-1.5">
+                      <div className="font-bold text-xs text-slate-900 truncate max-w-[150px] sm:max-w-[170px] flex items-center gap-1.5">
                         <span>{title}</span>
                       </div>
                       <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
@@ -253,7 +270,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                                   estado_pago: 'PAGADO',
                                 })
                               }
-                              className="px-1.5 py-0.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[9px] font-bold rounded-xs cursor-pointer flex items-center gap-1"
+                              className="px-1.5 py-0.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[9px] font-bold rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
                               title="Haz clic cuando hayas realizado el pago"
                             >
                               <CheckCircle2 className="w-2.5 h-2.5" />
@@ -274,18 +291,6 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                               Pagado
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateTransaction(tx.id, {
-                                es_gasto_fijo: false,
-                                frecuencia_recurrencia: 'PUNTUAL',
-                              })
-                            }
-                            className="text-[9px] text-slate-400 hover:text-purple-700 underline cursor-pointer"
-                          >
-                            Quitar fijo
-                          </button>
                         </div>
                       )}
                     </div>
@@ -520,6 +525,57 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
           })}
         </div>
       </div>
+
+      {/* Modal de confirmación para cancelar gasto fijo / suscripción */}
+      {confirmCancelTx && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full p-5 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-2">
+              <div className="w-9 h-9 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm">Cancelar Gasto Fijo / Suscripción</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              ¿Deseas cancelar el gasto fijo o suscripción{' '}
+              <strong className="text-slate-900 font-bold">
+                "{confirmCancelTx.titulo_resumen || confirmCancelTx.items[0]?.concepto || 'Gasto Fijo'}"
+              </strong>
+              ?
+              <br />
+              <br />
+              Al cancelar, ya no figurará en tus compromisos fijos mensuales ni en las proyecciones presupuestarias.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setConfirmCancelTx(null)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded cursor-pointer transition-colors"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const txToCancel = confirmCancelTx;
+                  setConfirmCancelTx(null);
+                  if (onCancelFixedExpense) {
+                    onCancelFixedExpense(txToCancel);
+                  } else if (onUpdateTransaction) {
+                    onUpdateTransaction(txToCancel.id, {
+                      es_gasto_fijo: false,
+                      frecuencia_recurrencia: 'PUNTUAL',
+                    });
+                  }
+                }}
+                className="px-3.5 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded cursor-pointer shadow-xs transition-colors"
+              >
+                Sí, cancelar suscripción
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

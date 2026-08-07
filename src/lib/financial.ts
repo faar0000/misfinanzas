@@ -1,6 +1,127 @@
 import { TransactionRecord } from '../types';
 
 /**
+ * Resolves the true main category for an item or transaction.
+ * Ensures health food, proteins, fruits, vegetables, groceries, and diet inputs
+ * are classified as "Alimentación y Dieta", while "Gastos Hormiga y Antojos"
+ * is strictly reserved for junk food, snacks, beer, pizza, fast food, and spontaneous treats.
+ */
+export const getNormalizedCategoryName = (
+  catName?: string,
+  subcatName?: string,
+  concepto?: string,
+  extraText?: string
+): string => {
+  const c = (catName || '').toLowerCase().trim();
+  const s = (subcatName || '').toLowerCase().trim();
+  const k = (concepto || '').toLowerCase().trim();
+  const e = (extraText || '').toLowerCase().trim();
+  const fullText = `${c} ${s} ${k} ${e}`;
+
+  // 1. Explicit Junk Food / Antojos check
+  const isJunkFoodOrAntojo =
+    s.includes('chatarra') ||
+    s.includes('galleta') ||
+    s.includes('cerveza') ||
+    s.includes('pollo a la brasa') ||
+    s.includes('pizza') ||
+    s.includes('hamburguesa') ||
+    s.includes('gaseosa') ||
+    s.includes('snack') ||
+    s.includes('dulce') ||
+    s.includes('golosina') ||
+    s.includes('postre') ||
+    s.includes('helado') ||
+    s.includes('papas fritas') ||
+    s.includes('piqueo') ||
+    s.includes('antojo') ||
+    s.includes('capricho') ||
+    s.includes('licor') ||
+    s.includes('trago') ||
+    k.includes('chatarra') ||
+    k.includes('galleta') ||
+    k.includes('cerveza') ||
+    k.includes('pollo a la brasa') ||
+    k.includes('pizza') ||
+    k.includes('hamburguesa') ||
+    k.includes('gaseosa') ||
+    k.includes('snack') ||
+    k.includes('dulce') ||
+    k.includes('golosina') ||
+    k.includes('postre') ||
+    k.includes('helado') ||
+    k.includes('papas fritas') ||
+    k.includes('piqueo') ||
+    k.includes('antojo') ||
+    fullText.includes('delivery no planificado');
+
+  if (isJunkFoodOrAntojo) {
+    return 'Gastos Hormiga y Antojos';
+  }
+
+  // 2. Healthy Food / Diet / Groceries / Household Supermarket Items
+  const isHealthyFoodOrGrocery =
+    s.includes('proteín') ||
+    s.includes('protein') ||
+    s.includes('dieta') ||
+    s.includes('fruta') ||
+    s.includes('lácteo') ||
+    s.includes('lacteo') ||
+    s.includes('verdura') ||
+    s.includes('carne') ||
+    s.includes('supermercado') ||
+    s.includes('abarrote') ||
+    s.includes('víveres') ||
+    s.includes('viveres') ||
+    s.includes('insumo') ||
+    s.includes('alimento') ||
+    s.includes('huevo') ||
+    s.includes('pan') ||
+    s.includes('leche') ||
+    s.includes('yogurt') ||
+    s.includes('queso') ||
+    s.includes('empaque') ||
+    s.includes('limpieza') ||
+    k.includes('proteín') ||
+    k.includes('protein') ||
+    k.includes('dieta') ||
+    k.includes('fruta') ||
+    k.includes('lácteo') ||
+    k.includes('lacteo') ||
+    k.includes('verdura') ||
+    k.includes('carne') ||
+    k.includes('supermercado') ||
+    k.includes('abarrote') ||
+    k.includes('víveres') ||
+    k.includes('viveres') ||
+    k.includes('insumo') ||
+    k.includes('alimento') ||
+    fullText.includes('plaza vea') ||
+    fullText.includes('wong') ||
+    fullText.includes('metro') ||
+    fullText.includes('tottus') ||
+    fullText.includes('vivanda');
+
+  if (isHealthyFoodOrGrocery) {
+    return 'Alimentación y Dieta';
+  }
+
+  // 3. Category Fallback / Direct Match
+  if (c.includes('alimentac') || c.includes('dieta')) return 'Alimentación y Dieta';
+  if (c.includes('hormiga') || c.includes('antojo')) return 'Gastos Hormiga y Antojos';
+  if (c.includes('vehíc') || c.includes('vehic')) return 'Vehículo';
+  if (c.includes('servicios') || c.includes('fijo')) return 'Servicios y Gastos Fijos';
+  if (c.includes('ocio') || c.includes('salida')) return 'Ocio y Salidas';
+  if (c.includes('crédito') || c.includes('credito') || c.includes('compromiso')) return 'Crédito y Compromisos';
+
+  if (catName && catName !== 'Otros' && catName !== 'General') {
+    return catName;
+  }
+
+  return 'Alimentación y Dieta';
+};
+
+/**
  * Normalizes recurring payment concepts (e.g., Luz, Agua, Teléfono/Internet, Alquiler, Cochera, Mantenimiento)
  * to group multiple historical receipts under the same recurring service concept.
  */
@@ -88,18 +209,53 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
   ) {
     return 'pension_educativa';
   }
+  if (fullText.includes('netflix')) return 'suscripcion_netflix';
+  if (fullText.includes('spotify')) return 'suscripcion_spotify';
+  if (fullText.includes('icloud') || fullText.includes('apple')) return 'suscripcion_apple_icloud';
+  if (fullText.includes('amazon') || fullText.includes('prime')) return 'suscripcion_amazon_prime';
+  if (fullText.includes('disney')) return 'suscripcion_disney';
+  if (fullText.includes('hbo') || fullText.includes('max')) return 'suscripcion_hbo_max';
 
-  // Remove month names, years, numbers and dates to normalize recurring titles like "Luz Julio 2026"
-  const cleaned = fullText
-    .replace(
-      /\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|setiembre|septiembre|octubre|noviembre|diciembre)\b/gi,
-      ''
-    )
+  // Normalize generic concept: strip generic terms like "suscripcion", "servicio", "pago", month names, numbers
+  const titleOrConcept = (tx.titulo_resumen || tx.items[0]?.concepto || '').toLowerCase();
+  const cleaned = titleOrConcept
+    .replace(/\b(suscripcion|suscripción|servicio|pago|cuota|mensual|fee|de|del|la|el|gastos|gasto|fijo)\b/gi, '')
+    .replace(/\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|setiembre|septiembre|octubre|noviembre|diciembre)\b/gi, '')
     .replace(/\b20\d\d\b/g, '')
     .replace(/[\d]/g, '')
+    .replace(/[^\w\s]/gi, '')
     .trim();
 
   return cleaned || tx.id;
+};
+
+/**
+  Checks if two transaction records represent the exact same recurring fixed concept.
+ */
+export const areSameRecurringConcept = (t1: TransactionRecord, t2: TransactionRecord): boolean => {
+  if (t1.id === t2.id) return true;
+  const key1 = getRecurringConceptKey(t1);
+  const key2 = getRecurringConceptKey(t2);
+  if (key1 && key2 && key1 === key2) return true;
+
+  const getCleanName = (tx: TransactionRecord) => {
+    const raw = (tx.titulo_resumen || tx.items[0]?.concepto || '').toLowerCase();
+    return raw
+      .replace(/\b(suscripcion|suscripción|servicio|pago|cuota|mensual|fee|de|del|la|el|gastos|gasto|fijo)\b/gi, '')
+      .replace(/\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|setiembre|septiembre|octubre|noviembre|diciembre)\b/gi, '')
+      .replace(/\b20\d\d\b/g, '')
+      .replace(/[\d]/g, '')
+      .replace(/[^\w\s]/gi, '')
+      .trim();
+  };
+
+  const name1 = getCleanName(t1);
+  const name2 = getCleanName(t2);
+  if (name1 && name2 && (name1 === name2 || name1.includes(name2) || name2.includes(name1))) {
+    return true;
+  }
+
+  return false;
 };
 
 /**
@@ -112,11 +268,10 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
     // Credit card installment purchases are tracked separately in cuotas
     if (t.metodo_pago === 'CREDITO' || (t.cuotas && t.cuotas > 1)) return false;
 
-    if (t.estado_pago === 'PENDIENTE') return true;
-    if (t.es_gasto_fijo === true) return true;
-
     const text = (
       (t.titulo_resumen || '') +
+      ' ' +
+      (t.comercio || '') +
       ' ' +
       t.items.map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
@@ -152,14 +307,38 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       text.includes('celular') ||
       text.includes('suscripc') ||
       text.includes('colegio') ||
+      text.includes('escuela') ||
       text.includes('pension') ||
       text.includes('pensión') ||
       text.includes('gym') ||
       text.includes('gimnasio') ||
       text.includes('seguro') ||
-      text.includes('arbitrios');
+      text.includes('arbitrios') ||
+      text.includes('netflix') ||
+      text.includes('spotify') ||
+      text.includes('icloud') ||
+      text.includes('prime') ||
+      text.includes('disney') ||
+      text.includes('hbo') ||
+      text.includes('paramount') ||
+      text.includes('youtube') ||
+      text.includes('max') ||
+      text.includes('apple') ||
+      text.includes('cada mes');
 
-    return hasFixedKeyword || t.es_gasto_fijo !== false;
+    if (t.es_gasto_fijo === true) return true;
+    if (t.frecuencia_recurrencia === 'MENSUAL') return true;
+    if (Boolean(t.dia_pago_mensual)) return true;
+    if (hasFixedKeyword) return true;
+
+    // Explicitly cancelled or marked as not fixed
+    if (t.es_gasto_fijo === false) return false;
+
+    if (t.estado_pago === 'PENDIENTE' && Boolean(t.dia_pago_mensual)) {
+      return true;
+    }
+
+    return false;
   });
 };
 

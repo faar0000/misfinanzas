@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { TransactionRecord, CATEGORIAS_BASE, BudgetSummary } from '../types';
+import { getNormalizedCategoryName } from '../lib/financial';
 import {
   PieChart as PieIcon,
   BarChart3,
@@ -45,12 +46,14 @@ const MONTH_NAMES_ES: { [key: string]: string } = {
   '12': 'Diciembre',
 };
 
+const currentMonthKey = new Date().toISOString().substring(0, 7);
+
 export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = ({
   transactions,
   summary,
   monedaSimbolo,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthKey);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [includePending, setIncludePending] = useState<boolean>(false);
 
@@ -99,17 +102,34 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
   filteredTransactions.forEach((tx) => {
     if (tx.tipo_operacion === 'GASTO') {
       const isCreditInstallment = tx.metodo_pago === 'CREDITO' && tx.cuotas > 1;
+      const txAmount = isCreditInstallment
+        ? (tx.monto_cuota_mensual || 0)
+        : (tx.monto_total || 0);
 
-      tx.items.forEach((item) => {
-        const cat = item.categoria_principal || 'Otros';
-        // For credit installments, count the monthly quota portion
-        const itemAmount = isCreditInstallment
-          ? (item.monto / (tx.monto_total || 1)) * tx.monto_cuota_mensual
-          : item.monto;
+      if (tx.items && tx.items.length > 0) {
+        const itemsSum = tx.items.reduce((s, i) => s + (i.monto || 0), 0);
+        tx.items.forEach((item) => {
+          const cat = getNormalizedCategoryName(
+            item.categoria_principal,
+            item.subcategoria,
+            item.concepto,
+            `${tx.titulo_resumen || ''} ${tx.comercio || ''}`
+          );
+          const itemAmount = itemsSum > 0 ? (item.monto / itemsSum) * txAmount : txAmount / tx.items.length;
 
-        categoryTotals[cat] = (categoryTotals[cat] || 0) + itemAmount;
-        totalExpensesInSelectedPeriod += itemAmount;
-      });
+          categoryTotals[cat] = (categoryTotals[cat] || 0) + itemAmount;
+          totalExpensesInSelectedPeriod += itemAmount;
+        });
+      } else {
+        const cat = getNormalizedCategoryName(
+          '',
+          '',
+          tx.titulo_resumen || tx.comercio || '',
+          ''
+        );
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + txAmount;
+        totalExpensesInSelectedPeriod += txAmount;
+      }
     }
   });
 
@@ -151,7 +171,12 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
         const isCreditInstallment = tx.metodo_pago === 'CREDITO' && tx.cuotas > 1;
 
         tx.items.forEach((item) => {
-          const cat = item.categoria_principal || 'Otros';
+          const cat = getNormalizedCategoryName(
+            item.categoria_principal,
+            item.subcategoria,
+            item.concepto,
+            `${tx.titulo_resumen || ''} ${tx.comercio || ''}`
+          );
           if (cat.toLowerCase() === selectedCategory.toLowerCase()) {
             const itemAmount = isCreditInstallment
               ? (item.monto / (tx.monto_total || 1)) * tx.monto_cuota_mensual
