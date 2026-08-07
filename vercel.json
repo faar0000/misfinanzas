@@ -6,6 +6,10 @@
       "destination": "/api/whatsapp/webhook"
     },
     {
+      "source": "/api/webhook",
+      "destination": "/api/webhook"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

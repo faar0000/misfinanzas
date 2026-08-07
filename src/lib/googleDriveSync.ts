@@ -6,6 +6,26 @@ export interface GoogleDriveSyncResult {
   syncedAt: string;
 }
 
+async function handleApiError(res: Response, actionName: string): Promise<never> {
+  const errText = await res.text();
+  if (typeof window !== 'undefined' && (res.status === 401 || res.status === 403)) {
+    localStorage.removeItem('asistente_financiero_google_token');
+  }
+
+  if (res.status === 401) {
+    throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta haciendo clic en "Conectar con Google Drive".');
+  }
+
+  if (errText.includes('accessNotConfigured') || errText.includes('has not been used in project') || errText.includes('PERMISSION_DENIED')) {
+    throw new Error(
+      '403 API_DISABLED: La API de Google Drive / Sheets no está habilitada en el proyecto de Google Cloud o el token pertenece a un proyecto anterior.\n\n' +
+      'Se ha limpiado el token guardado. Por favor, haz clic en "Conectar con Google Drive" para sincronizar nuevamente.'
+    );
+  }
+
+  throw new Error(`Error en ${actionName}: ${errText}`);
+}
+
 /**
  * Searches for an existing Google Sheet by name in Google Drive, or creates a new one.
  */
@@ -24,11 +44,7 @@ export async function getOrCreateFinancialSpreadsheet(
   });
 
   if (!searchRes.ok) {
-    const errText = await searchRes.text();
-    if (searchRes.status === 401) {
-      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
-    }
-    throw new Error(`Error buscando archivo en Google Drive: ${errText}`);
+    await handleApiError(searchRes, 'buscar archivo en Google Drive');
   }
 
   const searchData = await searchRes.json();
@@ -70,11 +86,7 @@ export async function getOrCreateFinancialSpreadsheet(
   });
 
   if (!createRes.ok) {
-    const errText = await createRes.text();
-    if (createRes.status === 401) {
-      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
-    }
-    throw new Error(`Error creando planilla en Google Sheets: ${errText}`);
+    await handleApiError(createRes, 'crear planilla en Google Sheets');
   }
 
   const newSheetData = await createRes.json();
@@ -141,11 +153,7 @@ export async function syncDataToGoogleSheets(
   });
 
   if (!txRes.ok) {
-    const errText = await txRes.text();
-    if (txRes.status === 401) {
-      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
-    }
-    throw new Error(`Error actualizando pestaña Transacciones: ${errText}`);
+    await handleApiError(txRes, 'actualizar pestaña Transacciones');
   }
 
   // Summary sheet rows
@@ -179,11 +187,7 @@ export async function syncDataToGoogleSheets(
   });
 
   if (!sumRes.ok) {
-    const errText = await sumRes.text();
-    if (sumRes.status === 401) {
-      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
-    }
-    throw new Error(`Error actualizando pestaña Resumen Presupuesto: ${errText}`);
+    await handleApiError(sumRes, 'actualizar pestaña Resumen Presupuesto');
   }
 
   return {

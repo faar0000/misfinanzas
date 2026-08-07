@@ -328,10 +328,24 @@ export default function App() {
     } catch (err: any) {
       console.warn('Sincronización con Google Drive:', err?.message || err);
       const msg = String(err?.message || err || '');
-      if (msg.includes('401') || msg.includes('UNAUTHENTICATED') || msg.includes('authentication credentials')) {
+      if (
+        msg.includes('401') ||
+        msg.includes('403') ||
+        msg.includes('UNAUTHENTICATED') ||
+        msg.includes('API_DISABLED') ||
+        msg.includes('authentication credentials') ||
+        msg.includes('accessNotConfigured') ||
+        msg.includes('Google Drive API has not been used')
+      ) {
         setAccessToken(null);
+        setGoogleUser(null);
         localStorage.removeItem('asistente_financiero_google_token');
-        if (isManual) {
+        if (msg.includes('API_DISABLED') || msg.includes('accessNotConfigured') || msg.includes('Google Drive API has not been used')) {
+          if (isManual) {
+            alert('⚠️ Token o proyecto anterior caducado:\n\nSe ha limpiado el token de sesión guardado. Vamos a volver a conectar tu cuenta con Google Drive.');
+            await handleGoogleLogin();
+          }
+        } else if (isManual) {
           alert('Tu sesión de Google ha expirado. Vamos a volver a conectar tu cuenta.');
           await handleGoogleLogin();
         }
