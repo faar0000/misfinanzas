@@ -18,31 +18,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
     const host = req.headers.host || 'misfinanzas-fir5.vercel.app';
     const parsedUrl = new URL(req.url || '', `https://${host}`);
+    const searchParams = parsedUrl.searchParams;
 
-    const mode = parsedUrl.searchParams.get('hub.mode') || (req.query?.['hub.mode'] as string) || (req.query?.mode as string);
-    const token = parsedUrl.searchParams.get('hub.verify_token') || (req.query?.['hub.verify_token'] as string) || (req.query?.verify_token as string) || (req.query?.token as string);
-    const challenge = parsedUrl.searchParams.get('hub.challenge') || (req.query?.['hub.challenge'] as string) || (req.query?.challenge as string);
+    const query = req.query || {};
+    const hubObj = (typeof query.hub === 'object' && query.hub !== null ? query.hub : {}) as Record<string, any>;
 
-    const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'asistente_financiero_token';
+    // Extraer parámetros soportando URLSearchParams, req.query plano y req.query.hub anidado
+    const mode =
+      searchParams.get('hub.mode') ||
+      searchParams.get('mode') ||
+      (typeof query['hub.mode'] === 'string' ? query['hub.mode'] : undefined) ||
+      (typeof hubObj.mode === 'string' ? hubObj.mode : undefined) ||
+      (typeof query.mode === 'string' ? query.mode : undefined);
 
-    console.log('[Meta Webhook GET Verification]', { mode, token, challenge, VERIFY_TOKEN });
+    const token =
+      searchParams.get('hub.verify_token') ||
+      searchParams.get('verify_token') ||
+      searchParams.get('token') ||
+      (typeof query['hub.verify_token'] === 'string' ? query['hub.verify_token'] : undefined) ||
+      (typeof hubObj.verify_token === 'string' ? hubObj.verify_token : undefined) ||
+      (typeof query.verify_token === 'string' ? query.verify_token : undefined) ||
+      (typeof query.token === 'string' ? query.token : undefined);
 
-    // Verificación exitosa del token y retorno del challenge
-    if (token === VERIFY_TOKEN && challenge) {
+    const challenge =
+      searchParams.get('hub.challenge') ||
+      searchParams.get('challenge') ||
+      (typeof query['hub.challenge'] === 'string' ? query['hub.challenge'] : undefined) ||
+      (typeof hubObj.challenge === 'string' ? hubObj.challenge : undefined) ||
+      (typeof query.challenge === 'string' ? query.challenge : undefined);
+
+    const envToken = process.env.WHATSAPP_VERIFY_TOKEN || 'asistente_financiero_token';
+    const expectedToken = envToken.trim().replace(/^["']|["']$/g, '');
+    const receivedToken = (token || '').trim();
+
+    console.log('[Meta Webhook Verification GET]', {
+      rawUrl: req.url,
+      mode,
+      receivedToken,
+      expectedToken,
+      challenge,
+      isMatch: receivedToken === expectedToken
+    });
+
+    // 1. Si el token coincide y tenemos challenge -> Respuesta exitosa a Meta
+    if (receivedToken === expectedToken && challenge) {
       console.log('✅ Webhook verificado con éxito. Respondiendo challenge:', challenge);
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       return res.status(200).send(String(challenge));
     }
 
-    // Petición de prueba directa desde navegador (sin parámetros)
+    // 2. Si recibimos un token pero no coincide
+    if (token && receivedToken !== expectedToken) {
+      console.warn(`❌ Token de verificación incorrecto. Recibido: "${receivedToken}", Esperado: "${expectedToken}"`);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(403).send('Forbidden: Token mismatch');
+    }
+
+    // 3. Petición de prueba directamente desde el navegador (sin parámetros de Meta)
     if (!mode && !token && !challenge) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       return res.status(200).send('Webhook de WhatsApp en Vercel activo y listo.');
     }
 
-    console.warn('❌ Token de verificación incorrecto o parámetros faltantes.');
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.status(403).send('Forbidden: Token mismatch');
+    return res.status(403).send('Forbidden');
   }
 
   // 2. PROCESAMIENTO DE MENSAJES ENTRANTES (POST)
