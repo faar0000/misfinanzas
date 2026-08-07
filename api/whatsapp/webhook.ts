@@ -16,58 +16,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 1. VALIDACIÓN DE WEBHOOK (GET) requerida por Meta for Developers
   if (req.method === 'GET') {
-    // Extraer parámetros soportando URLSearchParams, req.query anidado (qs) o plano
-    const rawUrl = req.url || '';
-    const parsedUrl = new URL(rawUrl, 'https://misfinanzas-fir5.vercel.app');
-    const searchParams = parsedUrl.searchParams;
+    const host = req.headers.host || 'misfinanzas-fir5.vercel.app';
+    const url = new URL(req.url || '', `https://${host}`);
+    const mode = url.searchParams.get('hub.mode') || (typeof req.query?.['hub.mode'] === 'string' ? req.query['hub.mode'] : undefined) || (typeof req.query?.mode === 'string' ? req.query.mode : undefined);
+    const token = url.searchParams.get('hub.verify_token') || (typeof req.query?.['hub.verify_token'] === 'string' ? req.query['hub.verify_token'] : undefined) || (typeof req.query?.verify_token === 'string' ? req.query.verify_token : undefined);
+    const challenge = url.searchParams.get('hub.challenge') || (typeof req.query?.['hub.challenge'] === 'string' ? req.query['hub.challenge'] : undefined) || (typeof req.query?.challenge === 'string' ? req.query.challenge : undefined);
 
-    const hubObj = (req.query?.hub || {}) as Record<string, any>;
+    const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'asistente_financiero_token';
 
-    const mode =
-      searchParams.get('hub.mode') ||
-      (typeof req.query?.['hub.mode'] === 'string' ? req.query['hub.mode'] : undefined) ||
-      hubObj.mode ||
-      (typeof req.query?.mode === 'string' ? req.query.mode : undefined);
+    console.log('[Vercel Webhook GET] Petición de Meta:', { mode, token, challenge, VERIFY_TOKEN });
 
-    const token =
-      searchParams.get('hub.verify_token') ||
-      (typeof req.query?.['hub.verify_token'] === 'string' ? req.query['hub.verify_token'] : undefined) ||
-      hubObj.verify_token ||
-      (typeof req.query?.verify_token === 'string' ? req.query.verify_token : undefined);
-
-    const challenge =
-      searchParams.get('hub.challenge') ||
-      (typeof req.query?.['hub.challenge'] === 'string' ? req.query['hub.challenge'] : undefined) ||
-      hubObj.challenge ||
-      (typeof req.query?.challenge === 'string' ? req.query.challenge : undefined);
-
-    console.log('[Vercel Webhook GET] Petición de verificación de Meta recibida:', {
-      rawUrl,
-      mode,
-      token,
-      challenge,
-      expectedVerifyToken
-    });
-
-    if (mode === 'subscribe' || token) {
-      if (token === expectedVerifyToken) {
-        console.log('[Vercel Webhook] Token de verificación CORRECTO. Devolviendo challenge puro:', challenge);
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.status(200).end(String(challenge || 'ok'));
-      } else {
-        console.warn(`[Vercel Webhook] Token INCORRECTO. Recibido: "${token}" != Esperado: "${expectedVerifyToken}"`);
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.status(403).end('Forbidden: Token mismatch');
-      }
+    if (mode === 'subscribe' && token === VERIFY_TOKEN && challenge) {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Content-Length': Buffer.byteLength(challenge)
+      });
+      res.end(challenge);
+      return;
     }
 
-    if (challenge) {
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      return res.status(200).end(String(challenge));
+    if (token === VERIFY_TOKEN && challenge) {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Content-Length': Buffer.byteLength(challenge)
+      });
+      res.end(challenge);
+      return;
     }
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.status(200).end('Webhook de WhatsApp en Vercel activo y listo.');
+    if (!mode && !token && !challenge) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('Webhook de WhatsApp en Vercel activo y listo.');
+      return;
+    }
+
+    return res.status(403).send('Forbidden');
   }
 
   // 2. PROCESAMIENTO DE MENSAJES ENTRANTES (POST)
