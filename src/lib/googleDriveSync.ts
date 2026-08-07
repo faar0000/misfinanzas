@@ -35,7 +35,7 @@ export async function getOrCreateFinancialSpreadsheet(
 ): Promise<{ id: string; url: string }> {
   // 1. Search in Drive
   const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink)`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime desc`;
 
   const searchRes = await fetch(searchUrl, {
     headers: {
@@ -255,5 +255,49 @@ export async function fetchTransactionsFromGoogleSheets(
   }
 
   return items;
+}
+
+/**
+ * Moves duplicate spreadsheets named 'Control Financiero Personal' to trash, keeping only keepSpreadsheetId.
+ */
+export async function cleanDuplicateSpreadsheets(
+  accessToken: string,
+  keepSpreadsheetId: string,
+  title: string = 'Control Financiero Personal'
+): Promise<number> {
+  const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
+
+  const searchRes = await fetch(searchUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!searchRes.ok) return 0;
+
+  const searchData = await searchRes.json();
+  const files: Array<{ id: string; name: string }> = searchData.files || [];
+
+  let trashedCount = 0;
+  for (const file of files) {
+    if (file.id !== keepSpreadsheetId) {
+      try {
+        const patchRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ trashed: true }),
+        });
+        if (patchRes.ok) {
+          trashedCount++;
+        }
+      } catch (e) {
+        console.warn('Error moving duplicate file to trash:', e);
+      }
+    }
+  }
+
+  return trashedCount;
 }
 

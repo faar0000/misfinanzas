@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { Cloud, CloudCheck, ExternalLink, RefreshCw, LogOut, FileSpreadsheet } from 'lucide-react';
+import { Cloud, CloudCheck, ExternalLink, RefreshCw, LogOut, FileSpreadsheet, Trash2 } from 'lucide-react';
 
 interface GoogleDriveSyncHeaderProps {
   user: User | null;
@@ -10,6 +10,7 @@ interface GoogleDriveSyncHeaderProps {
   onLogin: () => void;
   onLogout: () => void;
   onManualSync: () => void;
+  onCleanDuplicates?: () => void;
 }
 
 export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
@@ -20,6 +21,7 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
   onLogin,
   onLogout,
   onManualSync,
+  onCleanDuplicates,
 }) => {
   if (!user) {
     return (
@@ -99,6 +101,17 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Abrir Planilla en Drive</span>
           </a>
+        )}
+
+        {onCleanDuplicates && (
+          <button
+            onClick={onCleanDuplicates}
+            className="px-2.5 py-1.5 bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 text-xs font-medium rounded-sm border border-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Mover archivos duplicados en Google Drive a la papelera y conservar solo la planilla activa"
+          >
+            <Trash2 className="w-3 h-3 text-amber-400" />
+            <span className="hidden lg:inline">Limpiar Duplicados</span>
+          </button>
         )}
 
         <button

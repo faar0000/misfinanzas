@@ -30,6 +30,7 @@ import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
   fetchTransactionsFromGoogleSheets,
+  cleanDuplicateSpreadsheets,
 } from './lib/googleDriveSync';
 import {
   Home,
@@ -369,6 +370,28 @@ export default function App() {
       } else if (isManual) {
         alert(`Ocurrió un problema al sincronizar con Google Drive: ${err?.message || 'Error de conexión'}`);
       }
+    } finally {
+      setIsDriveSyncing(false);
+    }
+  };
+
+  const handleCleanDuplicates = async () => {
+    const activeToken = accessToken || localStorage.getItem('asistente_financiero_google_token');
+    const activeSheetId = spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id');
+    if (!activeToken || !activeSheetId) {
+      alert('Debes conectar Google Drive primero.');
+      return;
+    }
+    try {
+      setIsDriveSyncing(true);
+      const trashedCount = await cleanDuplicateSpreadsheets(activeToken, activeSheetId);
+      if (trashedCount > 0) {
+        alert(`🧹 Se han movido ${trashedCount} planilla(s) duplicada(s) a la papelera en tu Google Drive.\n\nSe mantendrá únicamente la planilla activa cargada en esta aplicación.`);
+      } else {
+        alert('✨ No se encontraron planillas duplicadas en tu Google Drive. Tu base de datos está limpia e integrada.');
+      }
+    } catch (err: any) {
+      alert(`Error al depurar duplicados en Drive: ${err?.message || 'Error de conexión'}`);
     } finally {
       setIsDriveSyncing(false);
     }
@@ -901,6 +924,7 @@ export default function App() {
             onLogin={handleGoogleLogin}
             onLogout={handleGoogleLogout}
             onManualSync={() => triggerDriveSync(null, undefined, true)}
+            onCleanDuplicates={handleCleanDuplicates}
           />
         </div>
 
