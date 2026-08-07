@@ -29,6 +29,7 @@ import { getLatestFixedExpenses } from './lib/financial';
 import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
+  fetchTransactionsFromGoogleSheets,
 } from './lib/googleDriveSync';
 import {
   Home,
@@ -311,10 +312,26 @@ export default function App() {
         localStorage.setItem('asistente_financiero_sheet_url', sheetUrl);
       }
 
+      // Try fetching remote transactions from Google Sheet to merge with local state
+      let combinedTxs = [...txsToSync];
+      try {
+        const remoteTxs = await fetchTransactionsFromGoogleSheets(activeToken, sheetId);
+        if (remoteTxs.length > 0) {
+          const localIds = new Set(txsToSync.map((t) => t.id));
+          const newFromSheet = remoteTxs.filter((rt) => !localIds.has(rt.id));
+          if (newFromSheet.length > 0) {
+            combinedTxs = [...newFromSheet, ...txsToSync];
+            setTransactions(combinedTxs);
+          }
+        }
+      } catch (err) {
+        console.warn('Error al leer de Google Sheets:', err);
+      }
+
       const syncRes = await syncDataToGoogleSheets(
         activeToken,
         sheetId,
-        txsToSync,
+        combinedTxs,
         budgetSummary,
         config.monedaSimbolo
       );
@@ -370,6 +387,10 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     const syncWhatsAppTransactions = async () => {
+      // No realizar peticiones si la pestaña está oculta o en segundo plano
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
       try {
         const res = await fetch('/api/whatsapp/transactions');
         if (!res.ok) return;
@@ -409,13 +430,17 @@ export default function App() {
       }
     };
 
+    // Ejecutar una vez al cargar
     syncWhatsAppTransactions();
-    const interval = setInterval(syncWhatsAppTransactions, 4000);
+
+    // Consultar cada 15 segundos en lugar de cada 4 segundos para evitar saturación de logs
+    const interval = setInterval(syncWhatsAppTransactions, 15000);
+
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [transactions, accessToken]);
+  }, [accessToken]);
 
   // Compute live budget summary based on actual cash flows and last paid month value for recurring services
   let ingresosCobradosTotal = 0;

@@ -196,3 +196,64 @@ export async function syncDataToGoogleSheets(
     syncedAt: new Date().toLocaleTimeString('es-PE'),
   };
 }
+
+/**
+ * Reads transactions from the 'Transacciones' sheet in Google Sheets.
+ */
+export async function fetchTransactionsFromGoogleSheets(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<TransactionRecord[]> {
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A2:K1000`;
+  const res = await fetch(getUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    return [];
+  }
+
+  const data = await res.json();
+  const rows: string[][] = data.values || [];
+  const items: TransactionRecord[] = [];
+
+  for (const row of rows) {
+    if (!row || row.length < 2) continue;
+    const [id, fecha, tipo, montoTotalStr, metodo, cuotasStr, cuotaMensualStr, alerta, dineroLibre, detalle, mensaje] = row;
+    if (!id || !fecha) continue;
+
+    const parseNum = (val: string) => {
+      if (!val) return 0;
+      const clean = val.replace(/[^0-9.,-]/g, '').replace(',', '.');
+      return parseFloat(clean) || 0;
+    };
+
+    items.push({
+      id: String(id),
+      fecha: String(fecha),
+      tipo_operacion: (tipo === 'INGRESO' ? 'INGRESO' : 'GASTO') as any,
+      monto_total: parseNum(montoTotalStr),
+      metodo_pago: (metodo as any) || 'DEBITO',
+      cuotas: parseInt(cuotasStr || '1', 10) || 1,
+      monto_cuota_mensual: parseNum(cuotaMensualStr),
+      items: [
+        {
+          concepto: detalle || 'Sincronizado desde Google Sheets',
+          monto: parseNum(montoTotalStr),
+          categoria_principal: tipo === 'INGRESO' ? 'Ingresos' : 'Variables',
+          subcategoria: 'Google Sheets',
+        },
+      ],
+      alerta_ahorro_comprometido: alerta?.includes('SÍ') || false,
+      dinero_libre_restante: parseNum(dineroLibre),
+      mensaje_usuario: mensaje || 'Sincronizado desde Google Sheets',
+      titulo_resumen: detalle || 'Transacción de Sheets',
+      estado_pago: 'PAGADO',
+    });
+  }
+
+  return items;
+}
+
