@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { Cloud, CloudCheck, ExternalLink, RefreshCw, LogOut, FileSpreadsheet } from 'lucide-react';
+import { CloudCheck, ExternalLink, RefreshCw, LogOut, FileSpreadsheet, Download } from 'lucide-react';
 
 interface GoogleDriveSyncHeaderProps {
   user: User | null;
@@ -10,6 +10,7 @@ interface GoogleDriveSyncHeaderProps {
   onLogin: () => void;
   onLogout: () => void;
   onManualSync: () => void;
+  onImportDrive?: () => void;
 }
 
 export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
@@ -20,6 +21,7 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
   onLogin,
   onLogout,
   onManualSync,
+  onImportDrive,
 }) => {
   if (!user) {
     return (
@@ -33,7 +35,7 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
               Sincronización con Google Drive & Sheets
             </h4>
             <p className="text-[11px] text-indigo-200 mt-0.5">
-              Conecta tu cuenta de Google para guardar automáticamente todas tus transacciones en una planilla en Drive.
+              Conecta tu cuenta de Google para guardar y cargar automáticamente todas tus transacciones desde Drive.
             </p>
           </div>
         </div>
@@ -80,13 +82,25 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        {onImportDrive && (
+          <button
+            onClick={onImportDrive}
+            disabled={isSyncing}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-sm border border-amber-500 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Cargar la información guardada en Google Drive hacia la aplicación"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Cargar Datos de Drive</span>
+          </button>
+        )}
+
         <button
           onClick={onManualSync}
           disabled={isSyncing}
           className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs font-semibold rounded-sm border border-emerald-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Drive'}</span>
+          <span>{isSyncing ? 'Sincronizando...' : 'Guardar en Drive'}</span>
         </button>
 
         {spreadsheetUrl && (
@@ -97,7 +111,7 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
             className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-sm transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Abrir Planilla en Drive</span>
+            <span>Abrir Planilla</span>
           </a>
         )}
 
@@ -112,3 +126,4 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
     </div>
   );
 };
+

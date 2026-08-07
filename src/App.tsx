@@ -28,6 +28,7 @@ import { getLatestFixedExpenses, getRecurringConceptKey, areSameRecurringConcept
 import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
+  readDataFromGoogleSheets,
 } from './lib/googleDriveSync';
 import {
   Home,
@@ -268,10 +269,83 @@ export default function App() {
       if (res) {
         setGoogleUser(res.user);
         setAccessToken(res.accessToken);
+
+        // Check if existing file has transactions in Google Drive
+        const fileInfo = await getOrCreateFinancialSpreadsheet(res.accessToken, 'Control Financiero Personal');
+        setSpreadsheetId(fileInfo.id);
+        setSpreadsheetUrl(fileInfo.url);
+        localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
+        localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
+
+        if (!fileInfo.isNew) {
+          // Spreadsheet existed! Attempt to load data from Drive first
+          const driveData = await readDataFromGoogleSheets(res.accessToken, fileInfo.id);
+          if (driveData && driveData.transactions && driveData.transactions.length > 0) {
+            const sorted = sortTransactionsByDateDesc(driveData.transactions);
+            setTransactions(sorted);
+            localStorage.setItem('asistente_financiero_txs', JSON.stringify(sorted));
+
+            if (driveData.config) setConfig((prev) => ({ ...prev, ...driveData.config }));
+            if (driveData.categoryBudgets) setCategoryBudgets(driveData.categoryBudgets);
+
+            const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            setLastDriveSyncedAt(nowFormatted);
+            localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
+
+            alert(`✅ ¡Google Drive conectado! Se recuperaron ${sorted.length} transacciones sincronizadas previamente.`);
+            return;
+          }
+        }
+
+        // If new or empty sheet, push local transactions to Drive
         triggerDriveSync(res.accessToken, transactions);
       }
     } catch (err) {
       console.error('Login de Google falló:', err);
+    }
+  };
+
+  const handleImportFromDrive = async (tokenToUse?: string | null) => {
+    const activeToken = tokenToUse || accessToken || localStorage.getItem('asistente_financiero_google_token');
+    if (!activeToken) {
+      await handleGoogleLogin();
+      return;
+    }
+
+    setIsDriveSyncing(true);
+    try {
+      const fileInfo = await getOrCreateFinancialSpreadsheet(activeToken, 'Control Financiero Personal');
+      setSpreadsheetId(fileInfo.id);
+      setSpreadsheetUrl(fileInfo.url);
+      localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
+      localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
+
+      const importedData = await readDataFromGoogleSheets(activeToken, fileInfo.id);
+      if (importedData && importedData.transactions && importedData.transactions.length > 0) {
+        const sorted = sortTransactionsByDateDesc(importedData.transactions);
+        setTransactions(sorted);
+        localStorage.setItem('asistente_financiero_txs', JSON.stringify(sorted));
+
+        if (importedData.config) {
+          setConfig((prev) => ({ ...prev, ...importedData.config }));
+        }
+        if (importedData.categoryBudgets) {
+          setCategoryBudgets(importedData.categoryBudgets);
+        }
+
+        const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setLastDriveSyncedAt(nowFormatted);
+        localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
+
+        alert(`✅ Carga exitosa: Se importaron ${sorted.length} transacciones desde tu Google Drive.`);
+      } else {
+        alert('ℹ️ No se encontraron transacciones guardadas en tu planilla de Google Drive.');
+      }
+    } catch (err: any) {
+      console.error('Error al importar desde Google Drive:', err);
+      alert(`Ocurrió un error al cargar datos desde Google Drive: ${err?.message || 'Error de conexión'}`);
+    } finally {
+      setIsDriveSyncing(false);
     }
   };
 
@@ -314,12 +388,13 @@ export default function App() {
         localStorage.setItem('asistente_financiero_sheet_url', sheetUrl);
       }
 
-      const syncRes = await syncDataToGoogleSheets(
+      await syncDataToGoogleSheets(
         activeToken,
         sheetId,
         txsToSync,
         budgetSummary,
-        config.monedaSimbolo
+        config.monedaSimbolo,
+        { config, categoryBudgets }
       );
       const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setLastDriveSyncedAt(nowFormatted);
@@ -850,6 +925,7 @@ export default function App() {
             onLogin={handleGoogleLogin}
             onLogout={handleGoogleLogout}
             onManualSync={() => triggerDriveSync(null, undefined, true)}
+            onImportDrive={() => handleImportFromDrive()}
           />
         </div>
 
