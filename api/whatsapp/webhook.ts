@@ -16,41 +16,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 1. VALIDACIÓN DE WEBHOOK (GET) requerida por Meta for Developers
   if (req.method === 'GET') {
-    const host = req.headers.host || 'misfinanzas-fir5.vercel.app';
-    const url = new URL(req.url || '', `https://${host}`);
-    const mode = url.searchParams.get('hub.mode') || (typeof req.query?.['hub.mode'] === 'string' ? req.query['hub.mode'] : undefined) || (typeof req.query?.mode === 'string' ? req.query.mode : undefined);
-    const token = url.searchParams.get('hub.verify_token') || (typeof req.query?.['hub.verify_token'] === 'string' ? req.query['hub.verify_token'] : undefined) || (typeof req.query?.verify_token === 'string' ? req.query.verify_token : undefined);
-    const challenge = url.searchParams.get('hub.challenge') || (typeof req.query?.['hub.challenge'] === 'string' ? req.query['hub.challenge'] : undefined) || (typeof req.query?.challenge === 'string' ? req.query.challenge : undefined);
+    const query = req.query || {};
+    const hubObj = (query.hub || {}) as Record<string, any>;
+
+    let mode = query['hub.mode'] || hubObj.mode || query['mode'];
+    let token = query['hub.verify_token'] || hubObj.verify_token || query['verify_token'] || query['token'];
+    let challenge = query['hub.challenge'] || hubObj.challenge || query['challenge'];
+
+    // Fallback con URL nativa por si req.query no capturó parámetros con punto
+    if (!mode || !token || !challenge) {
+      try {
+        const host = req.headers.host || 'misfinanzas-fir5.vercel.app';
+        const parsedUrl = new URL(req.url || '', `https://${host}`);
+        mode = mode || parsedUrl.searchParams.get('hub.mode') || parsedUrl.searchParams.get('mode');
+        token = token || parsedUrl.searchParams.get('hub.verify_token') || parsedUrl.searchParams.get('verify_token');
+        challenge = challenge || parsedUrl.searchParams.get('hub.challenge') || parsedUrl.searchParams.get('challenge');
+      } catch (e) {
+        console.error('Error parseando URL en GET:', e);
+      }
+    }
 
     const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'asistente_financiero_token';
 
-    console.log('[Vercel Webhook GET] Petición de Meta:', { mode, token, challenge, VERIFY_TOKEN });
+    console.log('[Meta Webhook GET Verification]', { mode, token, challenge, VERIFY_TOKEN });
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN && challenge) {
-      res.writeHead(200, {
-        'Content-Type': 'text/plain',
-        'Content-Length': Buffer.byteLength(challenge)
-      });
-      res.end(challenge);
-      return;
-    }
-
+    // Si coincide el token de verificación y tenemos un challenge
     if (token === VERIFY_TOKEN && challenge) {
-      res.writeHead(200, {
-        'Content-Type': 'text/plain',
-        'Content-Length': Buffer.byteLength(challenge)
-      });
-      res.end(challenge);
-      return;
+      console.log('✅ Webhook verificado con éxito. Respondiendo challenge:', challenge);
+      res.setHeader('Content-Type', 'text/plain');
+      return res.status(200).send(String(challenge));
     }
 
+    // Petición de prueba directa desde navegador
     if (!mode && !token && !challenge) {
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('Webhook de WhatsApp en Vercel activo y listo.');
-      return;
+      res.setHeader('Content-Type', 'text/plain');
+      return res.status(200).send('Webhook de WhatsApp en Vercel activo y listo.');
     }
 
-    return res.status(403).send('Forbidden');
+    console.warn('❌ Token de verificación incorrecto o parámetros faltantes.');
+    res.setHeader('Content-Type', 'text/plain');
+    return res.status(403).send('Forbidden: Token mismatch');
   }
 
   // 2. PROCESAMIENTO DE MENSAJES ENTRANTES (POST)
