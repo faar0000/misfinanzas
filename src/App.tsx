@@ -306,6 +306,13 @@ export default function App() {
   };
 
   const handleImportFromDrive = async (tokenToUse?: string | null) => {
+    const confirmLoad = window.confirm(
+      '⚠️ ATENCIÓN: Cargar datos desde Google Drive restaurará la última copia de respaldo guardada en la nube y reemplazará tus registros locales actuales.\n\n' +
+      '¿Deseas continuar?\n\n' +
+      '💡 Importante: Si has registrado o editado compras recientemente, te recomendamos hacer clic en "Cancelar" y presionar primero "Guardar" para actualizar tu respaldo en la nube.'
+    );
+    if (!confirmLoad) return;
+
     const activeToken = tokenToUse || accessToken || localStorage.getItem('asistente_financiero_google_token');
     if (!activeToken) {
       await handleGoogleLogin();
@@ -822,29 +829,29 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans pb-16 antialiased">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 md:pt-8">
         {/* Navigation Bar Header */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-sm p-1.5 mb-6 shadow-xs flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md p-1.5 mb-3 shadow-2xs">
+          <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 scrollbar-none">
             <button
               onClick={() => setActiveTab('inicio')}
-              className={`py-2 px-3.5 rounded-xs flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`py-2 px-3 sm:px-3.5 rounded-md flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'inicio'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <Home className="w-4 h-4" />
+              <Home className="w-4 h-4 shrink-0" />
               <span>Inicio / Registrar</span>
             </button>
 
             <button
               onClick={() => setActiveTab('historial')}
-              className={`py-2 px-3.5 rounded-xs flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`py-2 px-3 sm:px-3.5 rounded-md flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'historial'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <ListOrdered className="w-4 h-4" />
+              <ListOrdered className="w-4 h-4 shrink-0" />
               <span>Historial de Operaciones</span>
               <span className="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-[10px] px-1.5 py-0.5 rounded-full font-mono">
                 {transactions.length}
@@ -853,70 +860,44 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab('proyeccion')}
-              className={`py-2 px-3.5 rounded-xs flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`py-2 px-3 sm:px-3.5 rounded-md flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'proyeccion'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <CreditCard className="w-4 h-4" />
+              <CreditCard className="w-4 h-4 shrink-0" />
               <span>Proyección de Caja</span>
             </button>
 
             <button
               onClick={() => setActiveTab('presupuestos')}
-              className={`py-2 px-3.5 rounded-xs flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`py-2 px-3 sm:px-3.5 rounded-md flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'presupuestos'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <Target className="w-4 h-4 text-emerald-100" />
+              <Target className="w-4 h-4 text-emerald-100 shrink-0" />
               <span>Presupuestos</span>
             </button>
 
             <button
               onClick={() => setActiveTab('graficos')}
-              className={`py-2 px-3.5 rounded-xs flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`py-2 px-3 sm:px-3.5 rounded-md flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'graficos'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
-              <PieIcon className="w-4 h-4" />
+              <PieIcon className="w-4 h-4 shrink-0" />
               <span>Gráficos y Analítica</span>
             </button>
           </div>
-
-          <div className="flex items-center gap-2 px-2">
-            {isDriveSyncing ? (
-              <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 text-[11px] px-2.5 py-1 rounded-full font-mono font-semibold animate-pulse border border-emerald-300 dark:border-emerald-800">
-                <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 dark:text-emerald-400" />
-                <span>Guardando en Drive...</span>
-              </div>
-            ) : googleUser ? (
-              <div
-                onClick={() => triggerDriveSync(null, undefined, true)}
-                title="Haz clic para sincronizar ahora con Google Drive"
-                className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] px-2.5 py-1 rounded-full font-mono font-semibold cursor-pointer transition-colors"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Drive Conectado {lastDriveSyncedAt ? `(${lastDriveSyncedAt})` : ''}</span>
-              </div>
-            ) : (
-              <button
-                onClick={handleGoogleLogin}
-                className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] px-2.5 py-1 rounded-full font-mono font-semibold transition-colors cursor-pointer"
-              >
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                <span>Conectar Google Drive</span>
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* Global Google Drive Database Sync Banner (Visible in all tabs) */}
-        <div className="mb-6">
+        {/* Global Google Drive Database Sync Banner (Single Compact Unified Control) */}
+        <div className="mb-5">
           <GoogleDriveSyncHeader
             user={googleUser}
             isSyncing={isDriveSyncing}
