@@ -264,8 +264,11 @@ export default function App() {
         setAccessToken(res.accessToken);
         triggerDriveSync(res.accessToken, transactions);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login de Google falló:', err);
+      if (err?.message && !err.message.includes('cerrada antes de completar')) {
+        alert(err.message);
+      }
     }
   };
 
