@@ -366,6 +366,57 @@ export default function App() {
     localStorage.setItem('asistente_financiero_txs', JSON.stringify(transactions));
   }, [transactions]);
 
+  // Sincronización automática periódica de transacciones recibidas por WhatsApp
+  useEffect(() => {
+    let isMounted = true;
+    const syncWhatsAppTransactions = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/transactions');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && Array.isArray(data.transactions) && data.transactions.length > 0) {
+          const localIds = new Set(transactions.map((t) => t.id));
+          const newRemoteTxs = data.transactions
+            .map((item: any) => item.transaction || item)
+            .filter((tx: any) => tx && tx.id && !localIds.has(tx.id));
+
+          if (newRemoteTxs.length > 0 && isMounted) {
+            setTransactions((prev) => {
+              const prevIds = new Set(prev.map((t) => t.id));
+              const toAdd = newRemoteTxs.filter((tx: any) => !prevIds.has(tx.id));
+              if (toAdd.length === 0) return prev;
+              return [...toAdd, ...prev];
+            });
+
+            const latest = newRemoteTxs[0];
+            setSuccessNotification({
+              titulo: '¡Nuevo registro desde WhatsApp! 📱',
+              mensaje: latest.mensaje_usuario || `Se registró ${latest.tipo_operacion?.toLowerCase()} de S/. ${latest.monto_total}`,
+              monto: latest.monto_total,
+              tipo: latest.tipo_operacion || 'GASTO',
+              esGastoFijo: latest.es_gasto_fijo,
+              estadoPago: latest.estado_pago,
+            });
+
+            const token = accessToken || localStorage.getItem('asistente_financiero_google_token');
+            if (token) {
+              triggerDriveSync(token, [...newRemoteTxs, ...transactions]);
+            }
+          }
+        }
+      } catch {
+        // Ignorar errores de sondeo en segundo plano
+      }
+    };
+
+    syncWhatsAppTransactions();
+    const interval = setInterval(syncWhatsAppTransactions, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [transactions, accessToken]);
+
   // Compute live budget summary based on actual cash flows and last paid month value for recurring services
   let ingresosCobradosTotal = 0;
   let cuotasCredito = 0;

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
+import { saveWhatsAppTransaction } from './store';
 
 // Instancia de Gemini AI
 function getGeminiClient() {
@@ -8,6 +9,31 @@ function getGeminiClient() {
     throw new Error('GEMINI_API_KEY environment variable is not set');
   }
   return new GoogleGenAI({ apiKey });
+}
+
+// Formatear mensaje de respuesta para WhatsApp con emojis
+function formatWhatsAppReply(parsed: any, rawMessage: string): string {
+  const isIngreso = parsed.tipo_operacion === 'INGRESO';
+  const icon = isIngreso ? '🟢' : '🔴';
+  const tipoLabel = isIngreso ? 'INGRESO' : 'GASTO';
+  const itemConcepto = parsed.items?.[0]?.concepto || parsed.titulo_resumen || rawMessage;
+  const monto = Number(parsed.monto_total || 0).toFixed(2);
+  const metodo = parsed.metodo_pago || 'DEBITO';
+  const bancoStr = parsed.entidad_financiera ? ` (${parsed.entidad_financiera})` : '';
+
+  let reply = `${icon} *${tipoLabel} REGISTRADO EN TU CUENTA*\n\n`;
+  reply += `📌 *Concepto:* ${itemConcepto}\n`;
+  reply += `💰 *Monto:* S/. ${monto}\n`;
+  reply += `💳 *Medio:* ${metodo}${bancoStr}\n`;
+
+  if (parsed.cuotas && parsed.cuotas > 1) {
+    const cuotaMonto = Number(parsed.monto_cuota_mensual || parsed.monto_total || 0).toFixed(2);
+    reply += `📊 *Cuotas:* 1/${parsed.cuotas} (S/. ${cuotaMonto}/mes)\n`;
+  }
+
+  reply += `✅ *Estado:* Confirmado y Sincronizado en tu Aplicación\n\n`;
+  reply += `💬 _${parsed.mensaje_confirmacion || 'Registrado exitosamente en tu panel financiero.'}_`;
+  return reply;
 }
 
 // Handler principal para Vercel Serverless Function
@@ -115,25 +141,100 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ status: 'ignored', reason: 'Evento no requiere procesamiento' });
       }
 
-      // Procesar el mensaje con Gemini AI
+      // Procesar el mensaje con Gemini AI para estructurar la transacción financiera
+      let parsedData: any = null;
       let replyText = '';
+
       try {
         const ai = getGeminiClient();
         const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: messageText,
+          model: 'gemini-2.5-flash',
+          contents: `Analiza este mensaje financiero enviado por WhatsApp: "${messageText}"`,
           config: {
-            systemInstruction: `Eres un asistente de finanzas personales amable y eficiente. 
-Analiza el mensaje del usuario (por ejemplo: "Gasté 50 en almuerzo", "Cobré 1200 por un trabajo", etc.).
-Responde de forma clara, amigable y estructurada con emojis confirmando el registro de la transacción financiero y dando un breve consejo si aplica.`,
+            systemInstruction: `Eres un asistente de finanzas personales inteligente. Analiza el mensaje del usuario y devuelve un JSON estricto con esta estructura:
+{
+  "tipo_operacion": "GASTO" o "INGRESO",
+  "monto_total": number,
+  "metodo_pago": "DEBITO" o "CREDITO" o "EFECTIVO",
+  "cuotas": number (por defecto 1),
+  "monto_cuota_mensual": number,
+  "entidad_financiera": string (ej: "BCP", "Interbank", "Yape", "BBVA" o vacio ""),
+  "items": [
+    {
+      "concepto": string,
+      "monto": number,
+      "categoria_principal": string (ej: "Alimentación y Dieta", "Servicios y Gastos Fijos", "Ocio y Salidas", "Crédito y Compromisos", "Vehículo y Transporte", "Gastos Hormiga", "Ingresos"),
+      "subcategoria": string
+    }
+  ],
+  "titulo_resumen": string,
+  "es_gasto_fijo": boolean,
+  "mensaje_confirmacion": string
+}`,
+            responseMimeType: 'application/json',
           },
         });
 
-        replyText = response.text || 'Mensaje procesado correctamente.';
+        parsedData = JSON.parse(response.text || '{}');
       } catch (err: any) {
-        console.error('[Gemini Error]:', err?.message || err);
-        replyText = `✅ *Registro anotado:* "${messageText}"\n(Procesado en modo directo)`;
+        console.error('[Gemini Parse Error]:', err?.message || err);
+        // Fallback básico si falla el JSON de Gemini
+        const numbers = messageText.match(/(\d+(?:[\.,]\d{1,2})?)/g) || [];
+        const monto = numbers[0] ? parseFloat(numbers[0].replace(',', '.')) : 0;
+        parsedData = {
+          tipo_operacion: messageText.toLowerCase().includes('ingreso') || messageText.toLowerCase().includes('cobré') ? 'INGRESO' : 'GASTO',
+          monto_total: monto,
+          metodo_pago: 'DEBITO',
+          cuotas: 1,
+          monto_cuota_mensual: monto,
+          items: [{ concepto: messageText, monto, categoria_principal: 'Variables', subcategoria: 'WhatsApp' }],
+          titulo_resumen: messageText,
+          es_gasto_fijo: false,
+          mensaje_confirmacion: 'Transacción anotada correctamente.',
+        };
       }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const txRecord = {
+        id: `wa-tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        fecha: todayStr,
+        tipo_operacion: parsedData.tipo_operacion || 'GASTO',
+        monto_total: Number(parsedData.monto_total || 0),
+        metodo_pago: parsedData.metodo_pago || 'DEBITO',
+        cuotas: parsedData.cuotas || 1,
+        monto_cuota_mensual: Number(parsedData.monto_cuota_mensual || parsedData.monto_total || 0),
+        items: parsedData.items || [
+          {
+            concepto: parsedData.titulo_resumen || messageText,
+            monto: Number(parsedData.monto_total || 0),
+            categoria_principal: parsedData.tipo_operacion === 'INGRESO' ? 'Ingresos' : 'Alimentación y Dieta',
+            subcategoria: 'WhatsApp Bot',
+          },
+        ],
+        alerta_ahorro_comprometido: false,
+        dinero_libre_restante: 0,
+        mensaje_usuario: parsedData.mensaje_confirmacion || `Registrado desde WhatsApp: S/. ${parsedData.monto_total || 0}`,
+        comercio: parsedData.entidad_financiera || parsedData.titulo_resumen || 'WhatsApp',
+        titulo_resumen: parsedData.titulo_resumen || messageText,
+        entidad_financiera: parsedData.entidad_financiera || '',
+        es_gasto_fijo: Boolean(parsedData.es_gasto_fijo),
+        frecuencia_recurrencia: parsedData.es_gasto_fijo ? 'MENSUAL' : 'PUNTUAL',
+        estado_pago: 'PAGADO',
+        senderPhone: senderPhone,
+      };
+
+      // Guardar la transacción en el almacén persistente para sincronizar con la app web
+      saveWhatsAppTransaction({
+        id: txRecord.id,
+        phone: senderPhone,
+        rawMessage: messageText,
+        transaction: txRecord,
+        createdAt: new Date().toISOString(),
+      });
+
+      console.log('✅ Transacción de WhatsApp guardada:', txRecord.id, txRecord.titulo_resumen, txRecord.monto_total);
+
+      replyText = formatWhatsAppReply(parsedData, messageText);
 
       // Enviar la respuesta de vuelta a WhatsApp vía Meta Cloud API (si tenemos credenciales)
       const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN;
