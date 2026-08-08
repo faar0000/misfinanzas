@@ -213,7 +213,37 @@ export default function App() {
     esGastoFijo?: boolean;
     estadoPago?: 'PAGADO' | 'PENDIENTE';
     diaPago?: number;
+    processedBy?: 'gemini_ai' | 'fallback_heuristic';
+    modelUsed?: string;
+    fallbackReason?: string;
   } | null>(null);
+
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<{
+    status: string;
+    hasApiKey: boolean;
+    environment: string;
+    time: string;
+  } | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  const checkHealthEndpoint = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setHealthStatus(data);
+    } catch (err) {
+      setHealthStatus({
+        status: 'error',
+        hasApiKey: false,
+        environment: 'Desconocido (No se pudo conectar a /api/health)',
+        time: new Date().toISOString(),
+      });
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -738,6 +768,9 @@ export default function App() {
         esGastoFijo: newRecord.es_gasto_fijo,
         estadoPago: newRecord.estado_pago,
         diaPago: newRecord.dia_pago_mensual,
+        processedBy: parsedData.processedBy,
+        modelUsed: parsedData.modelUsed,
+        fallbackReason: parsedData.fallbackReason,
       });
 
       // Auto-sync to Google Drive if connected
@@ -893,6 +926,18 @@ export default function App() {
               <PieIcon className="w-4 h-4 shrink-0" />
               <span>Gráficos y Analítica</span>
             </button>
+
+            <button
+              onClick={() => {
+                checkHealthEndpoint();
+                setShowDiagnostics(true);
+              }}
+              className="py-2 px-3 rounded-md flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 sm:ml-auto border border-slate-200 dark:border-slate-800"
+              title="Verificar estado de conexión con Gemini IA y configuración de Vercel"
+            >
+              <Sparkles className="w-4 h-4 text-indigo-500 shrink-0" />
+              <span>Estado IA / Vercel</span>
+            </button>
           </div>
         </div>
 
@@ -985,6 +1030,24 @@ export default function App() {
                           ? 'GASTO FIJO MENSUAL'
                           : 'COMPRA ÚNICA'}
                       </span>
+
+                      {/* AI Processing Engine Status Badge */}
+                      {successNotification.processedBy === 'gemini_ai' ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-800 flex items-center gap-1">
+                          🤖 IA Gemini ({successNotification.modelUsed || 'gemini-3.6-flash'})
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            checkHealthEndpoint();
+                            setShowDiagnostics(true);
+                          }}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-xs bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Procesado con reglas básicas de respaldo. Haz clic para diagnosticar tu Vercel GEMINI_API_KEY."
+                        >
+                          ⚡ Modo Respaldo (Sin IA) — <u>Diagnosticar Vercel</u>
+                        </button>
+                      )}
                     </div>
                     <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 font-bold">
                       {successNotification.titulo} — {config.monedaSimbolo} {successNotification.monto.toFixed(2)}
@@ -1184,6 +1247,112 @@ export default function App() {
               summary={budgetSummary}
               monedaSimbolo={config.monedaSimbolo}
             />
+          </div>
+        )}
+
+        {/* Vercel & AI Diagnostics Modal */}
+        {showDiagnostics && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg max-w-lg w-full p-6 shadow-xl relative">
+              <button
+                onClick={() => setShowDiagnostics(false)}
+                className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-sm cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Diagnóstico de Conexión IA & Vercel
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                Verifica si tu aplicación desplegada en Vercel está procesando transacciones con <strong>Gemini AI</strong> o si está recurriendo al motor heurístico de respaldo.
+              </p>
+
+              {/* Live Health Status Box */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-md p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    Estado de Conexión Servidor (/api/health)
+                  </span>
+                  <button
+                    onClick={checkHealthEndpoint}
+                    disabled={isCheckingHealth}
+                    className="text-[11px] font-semibold text-emerald-600 hover:underline cursor-pointer"
+                  >
+                    {isCheckingHealth ? 'Probando...' : 'Re-comprobar'}
+                  </button>
+                </div>
+
+                {healthStatus ? (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Endpoint /api/health:</span>
+                      <span className="font-mono font-bold text-emerald-600">
+                        {healthStatus.status === 'ok' ? '✅ Activo (200 OK)' : '❌ Error de Conexión'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Variable GEMINI_API_KEY:</span>
+                      <span className={`font-mono font-bold ${healthStatus.hasApiKey ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {healthStatus.hasApiKey ? '✅ Configurada y Detectada' : '❌ NO Detectada (Falta en Vercel)'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">Entorno de Servidor:</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-200">
+                        {healthStatus.environment || 'Serverless / Express'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">Cargando prueba de diagnóstico...</p>
+                )}
+              </div>
+
+              {/* Actionable instructions if GEMINI_API_KEY is missing */}
+              {healthStatus && !healthStatus.hasApiKey && (
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-md p-4 mb-4 text-xs">
+                  <h4 className="font-bold text-amber-900 dark:text-amber-200 mb-1 flex items-center gap-1.5">
+                    ⚠️ ¿Cómo activar el procesamiento real con Gemini IA en Vercel?
+                  </h4>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 mt-2">
+                    <li>Entra a tu panel de control en <strong>vercel.com</strong> y abre tu proyecto.</li>
+                    <li>Ve a la pestaña <strong>Settings</strong> &rarr; <strong>Environment Variables</strong>.</li>
+                    <li>
+                      Añade una nueva variable:
+                      <div className="my-1.5 p-2 rounded-xs bg-amber-100/80 dark:bg-amber-900/40 text-[11px] font-mono border border-amber-300/50">
+                        <div>Key: <strong className="text-emerald-700 dark:text-emerald-300">GEMINI_API_KEY</strong></div>
+                        <div>Value: <span className="text-slate-600 dark:text-slate-400">tu_api_key_de_google_ai_studio</span></div>
+                      </div>
+                    </li>
+                    <li>Haz clic en <strong>Save</strong>.</li>
+                    <li>En Vercel, ve a <strong>Deployments</strong> &rarr; <strong>Redeploy</strong> para aplicar los cambios.</li>
+                  </ol>
+                </div>
+              )}
+
+              {healthStatus && healthStatus.hasApiKey && (
+                <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-md p-3 mb-4 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>¡Todo configurado correctamente! Vercel ejecutará <strong>Gemini AI (gemini-3.6-flash)</strong> para analizar texto, voz y OCR de boletas.</span>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowDiagnostics(false)}
+                  className="px-4 py-2 bg-slate-800 text-white rounded-md text-xs font-bold hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  Entendido / Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
