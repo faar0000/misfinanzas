@@ -80,16 +80,41 @@ export function parseFallbackTransaction(
   else if (promptLower.includes('diners')) entidadFinanciera = 'Diners Club';
   else if (promptLower.includes('cmr')) entidadFinanciera = 'CMR Falabella';
 
-  // Fixed expense check using strict word boundary regex to avoid "gaste" matching "gas"
+  // Check if expense is explicitly an occasional/variable purchase, fuel, or repair
+  const isOcasional =
+    promptLower.includes('gasolina') ||
+    promptLower.includes('combustible') ||
+    promptLower.includes('grifo') ||
+    promptLower.includes('diesel') ||
+    promptLower.includes('diésel') ||
+    promptLower.includes('peaje') ||
+    promptLower.includes('reparacion') ||
+    promptLower.includes('reparación') ||
+    promptLower.includes('arregla') ||
+    promptLower.includes('arreglo') ||
+    promptLower.includes('mecanico') ||
+    promptLower.includes('mecánico') ||
+    promptLower.includes('gasfitero') ||
+    promptLower.includes('repuesto') ||
+    promptLower.includes('lavadora') ||
+    promptLower.includes('electrodomestico') ||
+    promptLower.includes('electrodoméstico');
+
+  // Fixed expense check using strict terms
   const isGastoFijo =
     !isIngreso &&
+    !isOcasional &&
     (promptLower.includes('alquiler') ||
-      promptLower.includes('luz') ||
-      promptLower.includes('agua') ||
+      promptLower.includes('recibo de luz') ||
+      promptLower.includes('recibo de agua') ||
       promptLower.includes('internet') ||
-      /\bgas\b/i.test(promptLower) ||
-      promptLower.includes('cochera') ||
-      promptLower.includes('mantenimiento') ||
+      promptLower.includes('plan movil') ||
+      promptLower.includes('plan celular') ||
+      /\bgas natural\b/i.test(promptLower) ||
+      /\bcalidda\b/i.test(promptLower) ||
+      promptLower.includes('cochera mensual') ||
+      promptLower.includes('mantenimiento de edificio') ||
+      promptLower.includes('mantenimiento del condominio') ||
       /\bgym\b/i.test(promptLower) ||
       promptLower.includes('gimnasio') ||
       promptLower.includes('pension') ||
@@ -257,8 +282,11 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
    - Si se menciona "tarjeta de crédito", "tarjeta credito", "cuota", "interbank", "bcp", "bbva", etc., DEBES clasificar 'metodo_pago' = 'CREDITO'.
 
 5. Clasificación Estricta de Gasto Fijo Recurrente vs Compra Ocasional/Puntual:
-   - Asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL" ÚNICAMENTE a compromisos u obligaciones periódicas que se pagan todos los meses (Alquiler de vivienda, Mantenimiento, Luz, Agua, Internet, Plan móvil, Colegio, Suscripciones, Gimnasio, Seguros).
-   - JAMÁS clasifiques como gasto fijo (asigna es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL") compras de comida, fruta, palta, víveres, restaurantes, ropa o compras ocasionales.
+   - Asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL" ÚNICAMENTE a obligaciones contractuales o servicios periódicos obligatorios que vencen un día fijo todos los meses (ejemplos: Alquiler de vivienda, Mantenimiento mensual del edificio/condominio, Recibo de Luz, Recibo de Agua, Internet/Fibra, Plan celular mensual, Colegio/Pensiones universitarias, Suscripciones como Netflix/Spotify, Gimnasio mensual, Seguros).
+   - REGLA DE ORO - JAMÁS clasifiques como gasto fijo (DEBES asignar es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL") a:
+     * Combustible, Gasolina, Diésel, Grifo, Peajes, Lavado de auto o Aceite de motor.
+     * Reparaciones, Arreglos, Mantenimiento de artefactos/electrodomésticos (ej: reparación de lavadora, refrigeradora, cocina, televisor) o arreglos mecánicos/gasfitería/gasfitero.
+     * Comida, Frutas, Palta, Víveres, Restaurantes, Caprichos, Ropa, Electrónicos o Compras ocasionales.
 
 6. Formato de Salida JSON Estricto:
    Debes devolver un objeto JSON válido con los campos exactos solicitados.
@@ -355,10 +383,12 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
         },
         es_gasto_fijo: {
           type: Type.BOOLEAN,
+          description: 'True SOLO para obligaciones mensuales fijas (alquiler, luz, agua, internet, suscripciones). False para gasolina, combustible, reparaciones, mantenimiento de lavadora, comida o compras.',
         },
         frecuencia_recurrencia: {
           type: Type.STRING,
           enum: ['MENSUAL', 'PUNTUAL'],
+          description: 'MENSUAL si se paga obligatoriamente todos los meses. PUNTUAL si es una compra o reparación ocasional como gasolina o arreglo de artefactos.',
         },
         estado_pago: {
           type: Type.STRING,

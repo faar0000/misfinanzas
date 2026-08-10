@@ -4,9 +4,8 @@ import {
   ShieldCheck,
   TrendingUp,
   PieChart,
-  DollarSign,
+  Wallet,
   Settings,
-  HelpCircle,
 } from 'lucide-react';
 import { BudgetSummary } from '../types';
 
@@ -34,38 +33,36 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
     gastosEjecutadosReal = 0,
     gastosPendientesTotal = 0,
     gastosFijos,
-    cuotasCredito,
-    gastosVariables,
     saldoBancoReal,
     dineroLibreDisponible,
     alertaAhorroComprometido,
   } = summary;
 
   return (
-    <header className="mb-6 space-y-6">
+    <header className="mb-4 space-y-3 sm:space-y-4">
       {/* Top Navbar */}
-      <nav className="h-16 bg-white border border-slate-200 shadow-sm flex items-center justify-between px-6 sm:px-8 rounded-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 rounded-sm flex items-center justify-center shrink-0">
-            <div className="w-3.5 h-3.5 border-2 border-white rotate-45"></div>
+      <nav className="h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs flex items-center justify-between px-4 sm:px-6 rounded-md">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 bg-indigo-600 rounded-md flex items-center justify-center shrink-0">
+            <div className="w-3 h-3 border-2 border-white rotate-45"></div>
           </div>
           <div>
-            <span className="text-lg font-bold tracking-tight text-slate-800 uppercase font-sans">
+            <span className="text-base font-bold tracking-tight text-slate-800 dark:text-slate-100 uppercase font-sans">
               FINANCE.AI
             </span>
-            <span className="hidden sm:inline-block text-xs text-slate-400 ml-2 font-medium">
+            <span className="hidden sm:inline-block text-xs text-slate-400 dark:text-slate-500 ml-2 font-medium">
               • Asistente Financiero & Control de Caja
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           <button
             onClick={onOpenSettings}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-sm border border-slate-200 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
             title="Configurar presupuesto"
           >
-            <Settings className="w-3.5 h-3.5 text-indigo-600" />
+            <Settings className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
             <span>Ajustes</span>
           </button>
         </div>
@@ -73,207 +70,223 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
 
       {/* Critical Alert Warning Banner */}
       {alertaAhorroComprometido && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-sm flex items-start gap-3.5 shadow-sm">
-          <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 rounded-md flex items-center gap-3 shadow-2xs text-xs">
+          <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
           <div className="flex-1">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-rose-700">
-              ¡ALERTA: EL SALDO EN CUENTA Y GASTOS COMPROMETEN EL AHORRO PROTEGIDO!
-            </h3>
-            <p className="text-xs text-rose-600 mt-1">
-              Tus gastos ({monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}) comparados con el dinero abonado en banco ({monedaSimbolo} {ingresosCobradosTotal.toFixed(2)}) están invadiendo tu meta del 10% de ahorro ({monedaSimbolo} {metaAhorroMonto.toFixed(2)}).
-            </p>
+            <span className="font-bold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+              ¡Alerta de Ahorro!
+            </span>{' '}
+            <span>
+              Gastos ({monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}) e ingresos cobrados ({monedaSimbolo} {ingresosCobradosTotal.toFixed(2)}) invaden tu meta del 10% ({monedaSimbolo} {metaAhorroMonto.toFixed(2)}).
+            </span>
           </div>
         </div>
       )}
 
-      {/* Main Highlights Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 10% Protection Savings Deep Indigo Hero Card (4 cols) */}
-        <div className="lg:col-span-4 bg-indigo-900 text-white p-6 shadow-md rounded-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-indigo-200/80">
-                Protección de Ahorro (10%)
-              </h2>
-              <span className="px-2 py-0.5 bg-indigo-800 text-emerald-400 text-[10px] font-bold uppercase tracking-wider rounded-sm border border-indigo-700">
-                Meta Blindada
+      {/* Unified 4 Equal Cards Grid (2 cols on mobile, 4 cols on desktop) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        {/* Card 1: Protección de Ahorro (10%) */}
+        <div
+          className={`bg-white dark:bg-slate-900 border p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between transition-all ${
+            alertaAhorroComprometido
+              ? 'border-rose-300 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-950/20'
+              : 'border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate flex items-center gap-1">
+                {alertaAhorroComprometido ? (
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                )}
+                <span className="truncate">Ahorro 10%</span>
+              </span>
+              <span
+                className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-xs ${
+                  alertaAhorroComprometido
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                    : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                }`}
+              >
+                {alertaAhorroComprometido ? 'Alerta' : 'Blindado'}
               </span>
             </div>
 
-            <div className="text-3xl font-light font-mono mb-1 text-white">
-              {monedaSimbolo} {metaAhorroMonto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div
+              className={`text-lg sm:text-2xl font-bold font-mono tracking-tight ${
+                alertaAhorroComprometido ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-700 dark:text-indigo-300'
+              }`}
+            >
+              {monedaSimbolo}{' '}
+              {metaAhorroMonto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <p className="text-xs text-indigo-200/80 mb-6">
-              Reserva intocable del 10% calculada sobre tu ingreso base ({monedaSimbolo} {ingresoMensual.toFixed(0)}).
-            </p>
+          </div>
 
-            {/* Savings Bar */}
-            <div className="w-full bg-indigo-950 h-2 rounded-full overflow-hidden border border-indigo-800">
+          <div className="mt-2.5">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/60 dark:border-slate-700">
               <div
                 className={`h-full transition-all duration-500 ${
-                  alertaAhorroComprometido
-                    ? 'bg-rose-500'
-                    : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                  alertaAhorroComprometido ? 'bg-rose-500' : 'bg-indigo-600 dark:bg-indigo-400'
                 }`}
                 style={{ width: `${alertaAhorroComprometido ? 50 : 100}%` }}
               />
             </div>
-
-            <div className="mt-3 flex justify-between text-[10px] font-bold uppercase tracking-tight">
-              <span className={alertaAhorroComprometido ? 'text-rose-400' : 'text-emerald-400'}>
-                Estado: {alertaAhorroComprometido ? 'Comprometido' : 'Protegido'}
-              </span>
-              <span className="text-indigo-200/90">Meta 10%</span>
+            <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+              <span className="truncate">Base: {monedaSimbolo}{ingresoMensual.toFixed(0)}</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">10%</span>
             </div>
           </div>
-
-          <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-indigo-800 rounded-full opacity-30 pointer-events-none"></div>
         </div>
 
-        {/* 3 Metrics Cards (8 cols) */}
-        <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Ingresos Recibidos en Banco */}
-          <div className="bg-white border border-slate-200 p-5 shadow-sm rounded-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Ingresos Recibidos
+        {/* Card 2: Ingresos Recibidos */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="truncate">Ingresos</span>
               </span>
-              <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold rounded-xs border border-emerald-200">
+              <span className="px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[9px] font-mono font-bold rounded-xs border border-emerald-200 dark:border-emerald-800">
                 {porcentajeCobrado}% Cobrado
               </span>
             </div>
-            <div>
-              <div className="text-2xl font-bold font-mono text-emerald-600">
-                {monedaSimbolo} {ingresosCobradosTotal.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {montoPendienteCobrar > 0
-                  ? `Pendiente: ${monedaSimbolo} ${montoPendienteCobrar.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : 'Sueldo completo abonado'}
-              </p>
+
+            <div className="text-lg sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
+              {monedaSimbolo}{' '}
+              {ingresosCobradosTotal.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
 
-          {/* Gastos Totales Card with Proyectado vs Ejecutado Selector */}
-          <div className="bg-white border border-slate-200 p-5 shadow-sm rounded-sm flex flex-col justify-between relative">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
+            {montoPendienteCobrar > 0
+              ? `Pendiente: ${monedaSimbolo} ${montoPendienteCobrar.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : 'Sueldo completo abonado'}
+          </p>
+        </div>
+
+        {/* Card 3: Gastos (Proyectados / Ejecutados) */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between relative">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate flex items-center gap-1">
+                <PieChart className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                <span className="truncate">
                   Gastos {expenseViewMode === 'proyectado' ? 'Proyectados' : 'Ejecutados'}
                 </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowExpenseInfo(!showExpenseInfo)}
-                    className="w-4 h-4 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-500 hover:text-indigo-700 text-[10px] font-bold flex items-center justify-center transition-colors cursor-pointer"
-                    title="Explicación de Cómputo de Gastos"
-                  >
-                    ?
-                  </button>
-                </div>
-              </div>
+              </span>
 
-              {/* Toggle Switcher */}
-              <div className="flex bg-slate-100 p-0.5 rounded-xs mb-2 border border-slate-200 text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => setExpenseViewMode('proyectado')}
-                  className={`flex-1 py-0.5 px-1.5 rounded-xs transition-colors cursor-pointer ${
-                    expenseViewMode === 'proyectado'
-                      ? 'bg-rose-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Fin de Mes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExpenseViewMode('ejecutado')}
-                  className={`flex-1 py-0.5 px-1.5 rounded-xs transition-colors cursor-pointer ${
-                    expenseViewMode === 'ejecutado'
-                      ? 'bg-rose-600 text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Al Momento
-                </button>
-              </div>
-
-              <div className="text-2xl font-bold font-mono text-rose-600">
-                {monedaSimbolo}{' '}
-                {(expenseViewMode === 'proyectado'
-                  ? gastosTotalesProyectados
-                  : gastosEjecutadosReal
-                ).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-
-              {expenseViewMode === 'proyectado' ? (
-                <div className="text-[10px] font-mono text-slate-500 mt-1 flex flex-wrap gap-x-2">
-                  <span>Al momento: {gastosEjecutadosReal.toFixed(2)}</span>
-                  <span>+ Fijos: {gastosFijos.toFixed(2)}</span>
-                  {(summary.cuotasCreditoPendientes || 0) > 0 && (
-                    <span className="text-amber-700">+ Cuotas pend.: {(summary.cuotasCreditoPendientes || 0).toFixed(2)}</span>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[10px] font-mono text-slate-500 mt-1 flex flex-wrap gap-x-2">
-                  <span className="text-emerald-700 font-semibold">Pagado: {gastosEjecutadosReal.toFixed(2)}</span>
-                  {gastosPendientesTotal > 0 && (
-                    <span className="text-amber-700">| Pend: {gastosPendientesTotal.toFixed(2)}</span>
-                  )}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowExpenseInfo(!showExpenseInfo)}
+                className="w-4 h-4 rounded-full bg-slate-100 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-indigo-900 text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-[10px] font-bold flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                title="Explicación de Cómputo de Gastos"
+              >
+                ?
+              </button>
             </div>
 
-            {/* Explanation popover */}
-            {showExpenseInfo && (
-              <div className="mt-3 p-2.5 bg-indigo-50 border border-indigo-200 rounded-sm text-[11px] text-indigo-950 space-y-1 shadow-xs animate-fadeIn">
-                <div className="flex items-center justify-between font-bold text-indigo-900 text-[10px] uppercase">
-                  <span>💡 Cómputo de Gastos</span>
-                  <button
-                    onClick={() => setShowExpenseInfo(false)}
-                    className="text-indigo-400 hover:text-indigo-900 font-bold"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <p>
-                  • <strong>Fin de Mes (Proyectado):</strong> Gastos al momento ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}) + Gastos Fijos ({monedaSimbolo} {gastosFijos.toFixed(2)}){(summary.cuotasCreditoPendientes || 0) > 0 ? ` + Cuotas tc pend. (${monedaSimbolo} ${(summary.cuotasCreditoPendientes || 0).toFixed(2)})` : ''} = {monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}.
-                </p>
-                <p>
-                  • <strong>Al Momento (Ejecutado):</strong> Salida total de dinero y consumos registrados a la fecha ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}).
-                </p>
-              </div>
+            {/* Toggle Switcher */}
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xs mb-1.5 border border-slate-200 dark:border-slate-700 text-[9px] font-bold">
+              <button
+                type="button"
+                onClick={() => setExpenseViewMode('proyectado')}
+                className={`flex-1 py-0.5 px-1 rounded-xs transition-colors cursor-pointer ${
+                  expenseViewMode === 'proyectado'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                Fin de Mes
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpenseViewMode('ejecutado')}
+                className={`flex-1 py-0.5 px-1 rounded-xs transition-colors cursor-pointer ${
+                  expenseViewMode === 'ejecutado'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                Al Momento
+              </button>
+            </div>
+
+            <div className="text-lg sm:text-2xl font-bold font-mono text-rose-600 dark:text-rose-400 tracking-tight">
+              {monedaSimbolo}{' '}
+              {(expenseViewMode === 'proyectado'
+                ? gastosTotalesProyectados
+                : gastosEjecutadosReal
+              ).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="text-[9px] sm:text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-1 truncate">
+            {expenseViewMode === 'proyectado' ? (
+              <span>Moment: {gastosEjecutadosReal.toFixed(0)} + Fij: {gastosFijos.toFixed(0)}</span>
+            ) : (
+              <span>Pagado: {gastosEjecutadosReal.toFixed(0)} | Pend: {gastosPendientesTotal.toFixed(0)}</span>
             )}
           </div>
 
-          {/* Dinero Libre en Banco */}
-          <div
-            className={`bg-white border p-5 shadow-sm rounded-sm flex flex-col justify-between ${
-              alertaAhorroComprometido
-                ? 'ring-2 ring-rose-500/50 border-rose-300'
-                : 'ring-2 ring-indigo-500/20 border-slate-200'
-            }`}
-          >
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
-              Dinero Libre en Banco
-            </span>
-            <div>
-              <div
-                className={`text-2xl font-bold font-mono ${
-                  dineroLibreDisponible < 0 ? 'text-rose-600' : 'text-indigo-600'
-                }`}
-              >
-                {monedaSimbolo} {dineroLibreDisponible.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {/* Explanation popover */}
+          {showExpenseInfo && (
+            <div className="absolute top-12 left-2 right-2 z-20 p-2.5 bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-md text-[11px] text-indigo-950 dark:text-indigo-100 space-y-1 shadow-md animate-fadeIn">
+              <div className="flex items-center justify-between font-bold text-indigo-900 dark:text-indigo-200 text-[10px] uppercase">
+                <span>💡 Cómputo de Gastos</span>
+                <button
+                  onClick={() => setShowExpenseInfo(false)}
+                  className="text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200 font-bold"
+                >
+                  ✕
+                </button>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Saldo en banco ({monedaSimbolo} {saldoBancoReal.toFixed(0)}) tras 10% ahorro
+              <p>
+                • <strong>Fin de Mes (Proyectado):</strong> Gastos ejecutados ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}) + Fijos ({monedaSimbolo} {gastosFijos.toFixed(2)}) = {monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}.
+              </p>
+              <p>
+                • <strong>Al Momento (Ejecutado):</strong> Compras y salidas reales pagadas ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}).
               </p>
             </div>
+          )}
+        </div>
+
+        {/* Card 4: Dinero Libre en Banco */}
+        <div
+          className={`bg-white dark:bg-slate-900 border p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between ${
+            alertaAhorroComprometido
+              ? 'border-rose-300 dark:border-rose-800'
+              : 'border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate flex items-center gap-1">
+                <Wallet className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="truncate">Dinero Libre</span>
+              </span>
+            </div>
+
+            <div
+              className={`text-lg sm:text-2xl font-bold font-mono tracking-tight ${
+                dineroLibreDisponible < 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-indigo-600 dark:text-indigo-400'
+              }`}
+            >
+              {monedaSimbolo}{' '}
+              {dineroLibreDisponible.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
+
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
+            En banco: {monedaSimbolo} {saldoBancoReal.toFixed(0)} (tras 10% ahorro)
+          </p>
         </div>
       </div>
     </header>
   );
 };
+
 

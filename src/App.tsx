@@ -330,8 +330,16 @@ export default function App() {
         // If new or empty sheet, push local transactions to Drive
         triggerDriveSync(res.accessToken, transactions);
       }
-    } catch (err) {
-      console.error('Login de Google falló:', err);
+    } catch (err: any) {
+      console.warn('Inicio de sesión de Google cancelado o fallido:', err);
+      const errMsg = String(err?.message || err?.code || err || '');
+      if (
+        !errMsg.includes('popup-closed-by-user') &&
+        !errMsg.includes('cancelled-popup-request') &&
+        !errMsg.includes('Database is closing')
+      ) {
+        alert(`⚠️ No se pudo conectar con Google: ${errMsg}\n\nSi estás en un navegador privado o iframe, intenta permitir ventanas emergentes o volver a hacer clic en Conectar.`);
+      }
     }
   };
 
@@ -579,11 +587,22 @@ export default function App() {
   }) => {
     setIsProcessing(true);
     try {
+      // Optimize prompt sent to Gemini API to clearly distinguish between punctual and fixed expenses
+      const classificationInstruction = `\n\n[INSTRUCCIÓN CRÍTICA DE CLASIFICACIÓN DE GASTO FIJO VS PUNTUAL:
+Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categorices automáticamente un gasto como 'fijo' basándote únicamente en nombres o palabras similares:
+- GASTO PUNTUAL O CASUAL (es_gasto_fijo: false, frecuencia_recurrencia: "PUNTUAL"): Incluye compras de gasolina o combustible, reparaciones de lavadoras o electrodomésticos, arreglos mecánicos, repuestos, compras de comida, víveres o salidas. JAMÁS los clasifiques como gastos fijos.
+- GASTO FIJO MENSUAL (es_gasto_fijo: true, frecuencia_recurrencia: "MENSUAL"): Reservado ÚNICAMENTE para contratos o servicios periódicos obligatorios que vencen un día fijo todos los meses (alquiler de vivienda, recibo de luz, recibo de agua, internet, plan celular mensual, pensiones de colegio o suscripciones digitales).]`;
+
+      const enhancedPrompt = params.textPrompt
+        ? `${params.textPrompt.trim()}${classificationInstruction}`
+        : params.textPrompt;
+
       const response = await fetch('/api/process-financial', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...params,
+          textPrompt: enhancedPrompt,
           currentBudget: {
             ingresoMensual: config.ingresoMensual,
             ingresosCobrados: ingresosCobradosTotal,
@@ -638,6 +657,25 @@ export default function App() {
         itemsList.map((i: any) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
       ).toLowerCase();
 
+      const isCasualExpense =
+        allText.includes('gasolina') ||
+        allText.includes('combustible') ||
+        allText.includes('grifo') ||
+        allText.includes('diésel') ||
+        allText.includes('diesel') ||
+        allText.includes('peaje') ||
+        allText.includes('reparacion') ||
+        allText.includes('reparación') ||
+        allText.includes('arregla') ||
+        allText.includes('arreglo') ||
+        allText.includes('mecanico') ||
+        allText.includes('mecánico') ||
+        allText.includes('repuesto') ||
+        allText.includes('lavadora') ||
+        allText.includes('electrodomestico') ||
+        allText.includes('electrodoméstico') ||
+        allText.includes('gasfitero');
+
       const isCleaningOrGrocery =
         allText.includes('limpieza') ||
         allText.includes('aseo') ||
@@ -656,20 +694,21 @@ export default function App() {
 
       const hasFixedKeywords =
         !isCleaningOrGrocery &&
+        !isCasualExpense &&
         (allText.includes('alquiler') ||
           allText.includes('departamento') ||
           allText.includes('depa') ||
-          allText.includes('cochera') ||
-          allText.includes('estacionamiento') ||
-          allText.includes('parqueo') ||
-          allText.includes('mantenimiento') ||
-          allText.includes('luz') ||
-          allText.includes('agua') ||
+          allText.includes('cochera mensual') ||
+          allText.includes('mantenimiento de edificio') ||
+          allText.includes('mantenimiento del edificio') ||
+          allText.includes('mantenimiento de condominio') ||
+          allText.includes('recibo de luz') ||
+          allText.includes('recibo de agua') ||
           allText.includes('internet') ||
-          allText.includes('gas') ||
-          allText.includes('telefono') ||
-          allText.includes('teléfono') ||
-          allText.includes('celular') ||
+          allText.includes('gas natural') ||
+          allText.includes('calidda') ||
+          allText.includes('plan movil') ||
+          allText.includes('plan celular') ||
           allText.includes('suscripc') ||
           allText.includes('colegio') ||
           allText.includes('pension') ||
@@ -691,8 +730,12 @@ export default function App() {
           allText.includes('cada mes') ||
           allText.includes('de cada mes'));
 
-      if (hasFixedKeywords || typeof isGastoFijo !== 'boolean') {
-        isGastoFijo = hasFixedKeywords || Boolean(isGastoFijo);
+      if (isCasualExpense) {
+        isGastoFijo = false;
+      } else if (hasFixedKeywords) {
+        isGastoFijo = true;
+      } else {
+        isGastoFijo = Boolean(parsedData.es_gasto_fijo);
       }
 
       // Determine payment status (PENDIENTE vs PAGADO)
