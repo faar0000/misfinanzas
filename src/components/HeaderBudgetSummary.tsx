@@ -6,19 +6,24 @@ import {
   PieChart,
   Wallet,
   Settings,
+  Bell,
 } from 'lucide-react';
 import { BudgetSummary } from '../types';
 
 interface HeaderBudgetSummaryProps {
   summary: BudgetSummary;
   monedaSimbolo: string;
+  pendingAlertsCount?: number;
   onOpenSettings: () => void;
+  onNavigateToProyeccion?: () => void;
 }
 
 export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
   summary,
   monedaSimbolo,
+  pendingAlertsCount = 0,
   onOpenSettings,
+  onNavigateToProyeccion,
 }) => {
   const [expenseViewMode, setExpenseViewMode] = useState<'proyectado' | 'ejecutado'>('proyectado');
   const [showExpenseInfo, setShowExpenseInfo] = useState(false);
@@ -57,6 +62,26 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {pendingAlertsCount > 0 && (
+            <button
+              type="button"
+              onClick={onNavigateToProyeccion}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 dark:text-amber-200 text-xs font-bold rounded-md border border-amber-400/60 dark:border-amber-500/50 shadow-2xs transition-all cursor-pointer group animate-fadeIn"
+              title={`${pendingAlertsCount} ${pendingAlertsCount === 1 ? 'alerta de vencimiento pendiente' : 'alertas de vencimiento pendientes'}. Toca para ver el detalle en Gastos Fijos.`}
+            >
+              <div className="relative flex items-center justify-center">
+                <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 fill-amber-500/20 group-hover:scale-110 transition-transform animate-bounce" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+              </div>
+              <span className="hidden sm:inline text-[11px] font-extrabold uppercase tracking-tight text-amber-800 dark:text-amber-300">
+                Alertas
+              </span>
+              <span className="bg-amber-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full min-w-[18px] text-center shadow-2xs">
+                {pendingAlertsCount}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={onOpenSettings}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-md border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"

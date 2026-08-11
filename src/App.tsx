@@ -24,7 +24,7 @@ import {
   googleSignIn,
   logoutGoogle,
 } from './lib/googleAuth';
-import { getLatestFixedExpenses, getRecurringConceptKey, areSameRecurringConcept } from './lib/financial';
+import { getLatestFixedExpenses, getRecurringConceptKey, areSameRecurringConcept, isUpcomingDueDateAlert } from './lib/financial';
 import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
@@ -111,14 +111,14 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
     id: 'tx-3',
     fecha: new Date().toISOString().split('T')[0],
     tipo_operacion: 'GASTO',
-    monto_total: 280.0,
+    monto_total: 145.0,
     metodo_pago: 'DEBITO',
     cuotas: 1,
-    monto_cuota_mensual: 280.0,
+    monto_cuota_mensual: 145.0,
     items: [
       {
-        concepto: 'Luz, Agua e Internet del mes',
-        monto: 280.0,
+        concepto: 'Recibo de Luz (Enel)',
+        monto: 145.0,
         categoria_principal: 'Servicios y Gastos Fijos',
         subcategoria: 'Luz / Electricidad',
       },
@@ -126,9 +126,13 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
     alerta_ahorro_comprometido: false,
     dinero_libre_restante: 520.0,
     mensaje_usuario:
-      'Registrado pago de servicios fijos por S/. 280.00.',
+      'Compromiso de servicio de luz registrado como pendiente de pago para el día 12 del mes (próximo a vencer).',
     es_gasto_fijo: true,
     frecuencia_recurrencia: 'MENSUAL',
+    estado_pago: 'PENDIENTE',
+    dia_pago_mensual: 12,
+    comercio: 'Enel',
+    titulo_resumen: 'Recibo de Luz',
   },
   {
     id: 'tx-4',
@@ -487,6 +491,10 @@ export default function App() {
 
   // Compute fixed expenses baseline using the exact value of the last paid month for variable services
   const latestFixedExpensesList = getLatestFixedExpenses(transactions);
+  const currentDayNum = new Date().getDate();
+  const pendingFixedExpensesCount = latestFixedExpensesList.filter(
+    (t) => t.estado_pago === 'PENDIENTE' && isUpcomingDueDateAlert(t, currentDayNum)
+  ).length;
   const fixedExpensesIdSet = new Set(latestFixedExpensesList.map((t) => t.id));
   const gastosFijos = latestFixedExpensesList.reduce(
     (sum, t) => sum + (t.monto_total || 0),
@@ -1001,18 +1009,13 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
         {/* PAGE 1: INICIO (PANTALLA INICIAL) */}
         {activeTab === 'inicio' && (
           <div className="space-y-6">
-            {/* Main Budget Health Summary Header */}
+            {/* Main Budget Health Summary Header with top navbar alert symbol */}
             <HeaderBudgetSummary
               summary={budgetSummary}
               monedaSimbolo={config.monedaSimbolo}
+              pendingAlertsCount={pendingFixedExpensesCount}
               onOpenSettings={() => setIsSettingsOpen(true)}
-            />
-
-            {/* 4-Day Upcoming Due Date Reminder Banner for Fixed Expenses */}
-            <UpcomingDueDateReminderBanner
-              transactions={transactions}
-              monedaSimbolo={config.monedaSimbolo}
-              onUpdateTransaction={handleUpdateTransaction}
+              onNavigateToProyeccion={() => setActiveTab('proyeccion')}
             />
 
             {/* Box Principal para Registrar Operaciones (Texto, Voz, OCR Boleta) */}
@@ -1256,6 +1259,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
               ingresoMensual={config.ingresoMensual}
               onUpdateTransaction={handleUpdateTransaction}
               onCancelFixedExpense={handleCancelFixedExpense}
+              onNavigateToInicio={() => setActiveTab('inicio')}
             />
           </div>
         )}

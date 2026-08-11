@@ -53,14 +53,103 @@ export const getNormalizedCategoryName = (
     k.includes('papas fritas') ||
     k.includes('piqueo') ||
     k.includes('antojo') ||
+    c.includes('hormiga') ||
+    c.includes('antojo') ||
     fullText.includes('delivery no planificado');
 
   if (isJunkFoodOrAntojo) {
     return 'Gastos Hormiga y Antojos';
   }
 
-  // 2. Healthy Food / Diet / Groceries / Household Supermarket Items
+  // 2. Vehicle & Transport
+  const isVehicle =
+    c.includes('vehíc') ||
+    c.includes('vehic') ||
+    c.includes('auto') ||
+    s.includes('estacionamiento') ||
+    s.includes('cochera') ||
+    s.includes('parqueo') ||
+    s.includes('gasolina') ||
+    s.includes('combustible') ||
+    s.includes('peaje') ||
+    s.includes('repuesto') ||
+    s.includes('lavado') ||
+    k.includes('estacionamiento') ||
+    k.includes('cochera') ||
+    k.includes('parqueo') ||
+    k.includes('gasolina') ||
+    k.includes('combustible') ||
+    k.includes('peaje');
+
+  if (isVehicle) {
+    return 'Vehículo';
+  }
+
+  // 3. Household, Services, Cleaning, Repairs, Kitchen Utensils, Donations
+  const isServicesOrHousehold =
+    c.includes('servicios') ||
+    c.includes('fijo') ||
+    c.includes('vivienda') ||
+    c.includes('hogar') ||
+    c.includes('casa') ||
+    s.includes('limpieza') ||
+    s.includes('mantenimiento') ||
+    s.includes('reparaci') ||
+    s.includes('utensilio') ||
+    s.includes('cocina') ||
+    s.includes('alquiler') ||
+    s.includes('agua') ||
+    s.includes('luz') ||
+    s.includes('electricidad') ||
+    s.includes('internet') ||
+    s.includes('teléfono') ||
+    s.includes('telefono') ||
+    s.includes('gas') ||
+    s.includes('donaci') ||
+    s.includes('seguro') ||
+    s.includes('educaci') ||
+    k.includes('limpieza') ||
+    k.includes('mantenimiento') ||
+    k.includes('reparaci') ||
+    k.includes('utensilio') ||
+    k.includes('alquiler') ||
+    k.includes('donaci');
+
+  if (isServicesOrHousehold) {
+    return 'Servicios y Gastos Fijos';
+  }
+
+  // 4. Credit & Debt Commitments
+  const isCredit =
+    c.includes('crédito') ||
+    c.includes('credito') ||
+    c.includes('compromiso') ||
+    s.includes('tarjeta') ||
+    s.includes('préstamo') ||
+    s.includes('prestamo') ||
+    s.includes('cuotas');
+
+  if (isCredit) {
+    return 'Crédito y Compromisos';
+  }
+
+  // 5. Leisure & Outings
+  const isLeisure =
+    c.includes('ocio') ||
+    c.includes('salida') ||
+    s.includes('viaje') ||
+    s.includes('cine') ||
+    s.includes('restaurante') ||
+    s.includes('pasatiempo');
+
+  if (isLeisure) {
+    return 'Ocio y Salidas';
+  }
+
+  // 6. Healthy Food / Diet / Groceries
   const isHealthyFoodOrGrocery =
+    c.includes('alimentac') ||
+    c.includes('dieta') ||
     s.includes('proteín') ||
     s.includes('protein') ||
     s.includes('dieta') ||
@@ -81,7 +170,6 @@ export const getNormalizedCategoryName = (
     s.includes('yogurt') ||
     s.includes('queso') ||
     s.includes('empaque') ||
-    s.includes('limpieza') ||
     k.includes('proteín') ||
     k.includes('protein') ||
     k.includes('dieta') ||
@@ -95,25 +183,13 @@ export const getNormalizedCategoryName = (
     k.includes('víveres') ||
     k.includes('viveres') ||
     k.includes('insumo') ||
-    k.includes('alimento') ||
-    fullText.includes('plaza vea') ||
-    fullText.includes('wong') ||
-    fullText.includes('metro') ||
-    fullText.includes('tottus') ||
-    fullText.includes('vivanda');
+    k.includes('alimento');
 
   if (isHealthyFoodOrGrocery) {
     return 'Alimentación y Dieta';
   }
 
-  // 3. Category Fallback / Direct Match
-  if (c.includes('alimentac') || c.includes('dieta')) return 'Alimentación y Dieta';
-  if (c.includes('hormiga') || c.includes('antojo')) return 'Gastos Hormiga y Antojos';
-  if (c.includes('vehíc') || c.includes('vehic')) return 'Vehículo';
-  if (c.includes('servicios') || c.includes('fijo')) return 'Servicios y Gastos Fijos';
-  if (c.includes('ocio') || c.includes('salida')) return 'Ocio y Salidas';
-  if (c.includes('crédito') || c.includes('credito') || c.includes('compromiso')) return 'Crédito y Compromisos';
-
+  // 7. Respect explicit category name if provided
   if (catName && catName !== 'Otros' && catName !== 'General') {
     return catName;
   }
@@ -350,13 +426,22 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
 export const getLatestFixedExpenses = (transactions: TransactionRecord[]): TransactionRecord[] => {
   const rawFixed = filterRawFixedExpenses(transactions);
 
-  // Sort by date descending (latest date first) and prefer PAGADO status
+  // Sort by date descending (latest date first) and prefer PENDIENTE status when dates are same month
   const sorted = [...rawFixed].sort((a, b) => {
-    const timeA = new Date(a.fecha).getTime();
-    const timeB = new Date(b.fecha).getTime();
+    const dateA = new Date(a.fecha);
+    const dateB = new Date(b.fecha);
+    const sameMonth = dateA.getFullYear() === dateB.getFullYear() && dateA.getMonth() === dateB.getMonth();
+    
+    if (sameMonth) {
+      if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
+      if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
+    }
+
+    const timeA = dateA.getTime();
+    const timeB = dateB.getTime();
     if (timeA !== timeB) return timeB - timeA;
-    if (a.estado_pago === 'PAGADO' && b.estado_pago !== 'PAGADO') return -1;
-    if (b.estado_pago === 'PAGADO' && a.estado_pago !== 'PAGADO') return 1;
+    if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
+    if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
     return 0;
   });
 
@@ -370,3 +455,116 @@ export const getLatestFixedExpenses = (transactions: TransactionRecord[]): Trans
 
   return Array.from(latestMap.values());
 };
+
+/**
+ * Checks if a transaction is a pending fixed expense due within 4 days (or overdue).
+ */
+export const isUpcomingDueDateAlert = (tx: TransactionRecord, currentDay = new Date().getDate()): boolean => {
+  if (tx.tipo_operacion !== 'GASTO') return false;
+  if (tx.estado_pago !== 'PENDIENTE') return false;
+  
+  const dueDay = tx.dia_pago_mensual || 21;
+  const daysRemaining = dueDay - currentDay;
+  
+  // Alert activates if due within 4 days (or overdue)
+  return daysRemaining <= 4;
+};
+
+export type PyGPersonalTier = 'SUBSISTENCIA' | 'OPERATIVO' | 'DISCRECIONAL' | 'DEUDA_PASIVO';
+
+/**
+ * Maps a transaction or item into the Standard Personal P&G (Estado de Resultados) Financial Tiers:
+ * 1. SUBSISTENCIA: Costos Fijos Estructurales (Alquiler, Vivienda, Luz, Agua, Internet, Educación, Salud)
+ * 2. OPERATIVO: Costos Variables Operativos (Alimentación/Supermercado diario, Combustible, Mantenimiento preventivo)
+ * 3. DISCRECIONAL: Gastos Discrecionales (Estilo de Vida, Antojos, Salidas, Ocio, Compras)
+ * 4. DEUDA_PASIVO: Servicio de Deuda / Reducción de Pasivos (Cuotas de Crédito, Amortizaciones de Tarjeta o Préstamo)
+ */
+export const getFinancialTier = (
+  catName: string,
+  subcatName: string,
+  concepto: string,
+  metodoPago: string,
+  cuotas: number,
+  esGastoFijo?: boolean
+): PyGPersonalTier => {
+  const c = catName.toLowerCase().trim();
+  const s = subcatName.toLowerCase().trim();
+  const k = concepto.toLowerCase().trim();
+  const text = `${c} ${s} ${k}`;
+
+  // 1. Debt Service / Liabilities reduction
+  if (
+    c.includes('crédito') ||
+    c.includes('credito') ||
+    c.includes('compromisos') ||
+    s.includes('tarjeta') ||
+    s.includes('préstamo') ||
+    s.includes('prestamo') ||
+    s.includes('cuotas') ||
+    s.includes('amortización') ||
+    s.includes('amortizacion') ||
+    k.includes('tarjeta') ||
+    k.includes('préstamo') ||
+    k.includes('prestamo') ||
+    k.includes('amortización') ||
+    (metodoPago === 'CREDITO' && cuotas > 1)
+  ) {
+    return 'DEUDA_PASIVO';
+  }
+
+  // 2. Fixed Structural / Existence Expenses (Subsistencia)
+  if (
+    esGastoFijo ||
+    c.includes('servicios') ||
+    c.includes('vivienda') ||
+    s.includes('alquiler') ||
+    s.includes('mantenimiento de edificio') ||
+    s.includes('agua') ||
+    s.includes('luz') ||
+    s.includes('electricidad') ||
+    s.includes('internet') ||
+    s.includes('teléfono') ||
+    s.includes('telefono') ||
+    s.includes('gas') ||
+    s.includes('educación') ||
+    s.includes('educacion') ||
+    s.includes('colegio') ||
+    s.includes('universidad') ||
+    s.includes('salud') ||
+    s.includes('seguro') ||
+    s.includes('gimnasio') ||
+    k.includes('alquiler') ||
+    k.includes('mantenimiento') ||
+    k.includes('cochera')
+  ) {
+    return 'SUBSISTENCIA';
+  }
+
+  // 3. Discretionary / Lifestyle
+  if (
+    c.includes('ocio') ||
+    c.includes('salidas') ||
+    c.includes('hormiga') ||
+    c.includes('antojos') ||
+    s.includes('salida') ||
+    s.includes('restaurante') ||
+    s.includes('chatarra') ||
+    s.includes('deliveries') ||
+    s.includes('delivery') ||
+    s.includes('viaje') ||
+    s.includes('pasatiempo') ||
+    s.includes('compras por internet') ||
+    k.includes('antojo') ||
+    k.includes('capricho') ||
+    k.includes('cine') ||
+    k.includes('ropa') ||
+    k.includes('tecnología') ||
+    k.includes('tecnologia')
+  ) {
+    return 'DISCRECIONAL';
+  }
+
+  // 4. Default Operational Variable (Supermarket, Fuel, Transportation, Pets, Personal Care)
+  return 'OPERATIVO';
+};
+
