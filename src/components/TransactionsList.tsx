@@ -3,6 +3,7 @@ import {
   Trash2,
   Search,
   CreditCard,
+  Banknote,
   Tag,
   Calendar,
   ArrowUpRight,
@@ -25,6 +26,65 @@ interface TransactionsListProps {
   onUpdateTransaction?: (id: string, updatedFields: Partial<TransactionRecord>) => void;
   monedaSimbolo: string;
 }
+
+// Helper to format date header (e.g., "Hoy, 18 de Agosto", "Ayer, 17 de Agosto", "Lunes, 10 de Agosto")
+const formatDateGroupHeader = (dateStr: string): { title: string; relative?: string } => {
+  if (!dateStr) return { title: 'Sin fecha' };
+
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return { title: dateStr };
+
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    return { title: dateStr };
+  }
+
+  const txDate = new Date(year, month, day);
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const diffTime = todayStart.getTime() - txDate.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  const dayNames = [
+    'Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'
+  ];
+
+  const formattedMonth = monthNames[month] || '';
+  const dayOfWeek = dayNames[txDate.getDay()] || '';
+
+  if (diffDays === 0) {
+    return {
+      title: `Hoy, ${day} de ${formattedMonth}`,
+      relative: 'Hoy',
+    };
+  } else if (diffDays === 1) {
+    return {
+      title: `Ayer, ${day} de ${formattedMonth}`,
+      relative: 'Ayer',
+    };
+  } else if (diffDays === -1) {
+    return {
+      title: `Mañana, ${day} de ${formattedMonth}`,
+      relative: 'Mañana',
+    };
+  } else if (year === today.getFullYear()) {
+    return {
+      title: `${dayOfWeek}, ${day} de ${formattedMonth}`,
+    };
+  } else {
+    return {
+      title: `${dayOfWeek}, ${day} de ${formattedMonth} de ${year}`,
+    };
+  }
+};
 
 export const TransactionsList: React.FC<TransactionsListProps> = ({
   transactions,
@@ -106,9 +166,24 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     return (b.id || '').localeCompare(a.id || '');
   });
 
+  // Group transactions by date
+  const groupedTransactions: { date: string; items: TransactionRecord[] }[] = [];
+  sortedTransactions.forEach((tx) => {
+    const dateKey = tx.fecha || 'Sin fecha';
+    const lastGroup = groupedTransactions[groupedTransactions.length - 1];
+    if (lastGroup && lastGroup.date === dateKey) {
+      lastGroup.items.push(tx);
+    } else {
+      groupedTransactions.push({ date: dateKey, items: [tx] });
+    }
+  });
+
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
+
+  const executedCount = transactions.filter((t) => t.estado_pago !== 'PENDIENTE').length;
+  const pendingCount = transactions.filter((t) => t.estado_pago === 'PENDIENTE').length;
 
   return (
     <div className="bg-white border border-slate-200 shadow-sm rounded-sm flex flex-col mb-6 overflow-hidden">
@@ -118,7 +193,11 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             Historial de Operaciones
           </h2>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {transactions.length} registros almacenados • Ordenados de más reciente a más antiguo
+            {filterType === 'ALL'
+              ? `${executedCount} movimientos ejecutados en banco • Ordenados cronológicamente`
+              : filterType === 'PENDIENTE'
+              ? `${pendingCount} compromisos pendientes de pago programados`
+              : `${filteredTransactions.length} registros mostrados`}
           </p>
         </div>
 
@@ -142,27 +221,56 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             onChange={(e) => setFilterType(e.target.value)}
             className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-sm outline-none font-medium cursor-pointer"
           >
-            <option value="ALL">Movimientos Ejecutados en Banco</option>
-            <option value="GASTO">Gastos Ejecutados</option>
-            <option value="GASTO_FIJO">📌 Gastos Fijos Recurrentes</option>
-            <option value="GASTO_PUNTUAL">🛒 Compras Únicas</option>
-            <option value="INGRESO">Ingresos</option>
-            <option value="PENDIENTE">⏳ Compromisos Pendientes de Pago</option>
-            <option value="TODOS">Todos (Ejecutados + Pendientes)</option>
+            <option value="ALL">Movimientos Ejecutados en Banco ({executedCount})</option>
+            <option value="GASTO">Solo Gastos Ejecutados</option>
+            <option value="INGRESO">Solo Ingresos Ejecutados</option>
+            <option value="GASTO_FIJO">📌 Gastos Fijos (Pagados)</option>
+            <option value="GASTO_PUNTUAL">🛒 Compras Únicas (Pagadas)</option>
+            <option value="PENDIENTE">⏳ Compromisos Pendientes ({pendingCount})</option>
+            <option value="TODOS">Todos ({transactions.length})</option>
           </select>
         </div>
       </div>
 
       {/* Table */}
-      {sortedTransactions.length === 0 ? (
+      {groupedTransactions.length === 0 ? (
         <div className="text-center py-10 text-slate-400 text-xs italic">
           No se encontraron registros que coincidan con la búsqueda.
         </div>
       ) : (
-        <div className="divide-y divide-slate-100">
-          {sortedTransactions.map((tx) => {
-            const isExpanded = expandedId === tx.id;
-            const mainCategory = tx.items[0]?.categoria_principal || 'General';
+        <div className="divide-y divide-slate-200">
+          {groupedTransactions.map((group) => {
+            const { title, relative } = formatDateGroupHeader(group.date);
+
+            return (
+              <div key={group.date} className="bg-white">
+                {/* Encabezado de Fecha del Grupo */}
+                <div className="px-6 py-2.5 bg-slate-50/95 border-y border-slate-200/80 flex items-center justify-between sticky top-0 z-10">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span className="text-xs font-bold text-slate-800 tracking-tight">{title}</span>
+                    {relative && (
+                      <span
+                        className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                          relative === 'Hoy'
+                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {relative}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400 font-medium ml-1">
+                      ({group.items.length} {group.items.length === 1 ? 'operación' : 'operaciones'})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lista de transacciones en este día */}
+                <div className="divide-y divide-slate-100">
+                  {group.items.map((tx) => {
+                    const isExpanded = expandedId === tx.id;
+                    const mainCategory = tx.items[0]?.categoria_principal || 'General';
 
             return (
               <div
@@ -224,11 +332,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 });
                               }}
                               className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-sm border border-indigo-200 transition-colors cursor-pointer"
-                              title="Tarjeta de Crédito. Haz clic para cambiar a Débito"
+                              title="Tarjeta de Crédito (clic para cambiar a Débito)"
                             >
                               <CreditCard className="w-3 h-3 text-indigo-600" />
-                              <span>{tx.entidad_financiera || 'Tarjeta de Crédito'}</span>
-                              <span className="text-[9px] text-indigo-500 font-normal ml-0.5">(cambiar a Débito)</span>
+                              <span>{tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito' ? `Crédito (${tx.entidad_financiera})` : 'Crédito'}</span>
                             </button>
                           ) : tx.metodo_pago === 'DEBITO' ? (
                             <button
@@ -244,11 +351,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 });
                               }}
                               className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[10px] font-bold rounded-sm border border-blue-200 transition-colors cursor-pointer"
-                              title="Pago en Débito. Haz clic para cambiar a Efectivo"
+                              title="Tarjeta de Débito (clic para cambiar a Efectivo)"
                             >
                               <CreditCard className="w-3 h-3 text-blue-600" />
-                              <span>Tarjeta de Débito {tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito' ? `(${tx.entidad_financiera})` : ''}</span>
-                              <span className="text-[9px] text-blue-500 font-normal ml-0.5">(cambiar a Efectivo)</span>
+                              <span>{tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito' ? `Débito (${tx.entidad_financiera})` : 'Débito'}</span>
                             </button>
                           ) : (
                             <button
@@ -261,11 +367,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 });
                               }}
                               className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-sm border border-slate-300 transition-colors cursor-pointer"
-                              title="Pago en Efectivo. Haz clic para cambiar a Tarjeta de Crédito"
+                              title="Efectivo (clic para cambiar a Crédito)"
                             >
-                              <CreditCard className="w-3 h-3 text-slate-500" />
+                              <Banknote className="w-3 h-3 text-slate-500" />
                               <span>Efectivo</span>
-                              <span className="text-[9px] text-slate-400 font-normal ml-0.5">(cambiar a Crédito)</span>
                             </button>
                           )
                         )}
@@ -332,17 +437,6 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             Cuota {tx.cuota_actual || 1}/{tx.cuotas}
                           </span>
                         )}
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs mt-1">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 font-semibold text-[11px] rounded border border-slate-200">
-                          <Calendar className="w-3 h-3 text-slate-500" />
-                          <span>{tx.fecha}</span>
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span className="font-bold uppercase text-[10px] tracking-wider text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                          {tx.metodo_pago}
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -545,6 +639,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     </div>
                   </div>
                 )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}

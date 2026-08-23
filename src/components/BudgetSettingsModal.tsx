@@ -47,17 +47,17 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
             <DollarSign className="w-4 h-4" />
           </div>
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-800">
-            Configuración del Presupuesto
+            Configuración del Sueldo Base
           </h3>
         </div>
         <p className="text-[11px] text-slate-400 mb-5 ml-10">
-          Ajusta tu ingreso mensual y parámetros de protección de ahorro.
+          Define tu sueldo base mensual esperado (nómina o planilla).
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-              Ingreso Mensual Total
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+              Sueldo Fijo Mensual Base
             </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-xs font-mono font-bold text-slate-400">
@@ -73,7 +73,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Meta estricta de ahorro (10%):{' '}
+              Ahorro base protegido (10%):{' '}
               <strong className="text-emerald-600 font-mono font-bold">
                 {moneda} {((Number(ingreso) || 0) * 0.1).toFixed(2)}
               </strong>
@@ -81,7 +81,7 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
               Símbolo de Moneda
             </label>
             <select
@@ -97,12 +97,21 @@ export const BudgetSettingsModal: React.FC<BudgetSettingsModalProps> = ({
             </select>
           </div>
 
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs rounded-sm space-y-1">
+            <strong className="font-bold flex items-center gap-1.5 text-emerald-800">
+              <span>Ingresos Adicionales Acumulativos:</span>
+            </strong>
+            <p className="text-[11px] text-emerald-900 leading-relaxed">
+              Si registras ingresos adicionales en el mes (freelance, bonos, ventas, asesorías), el sistema los sumará automáticamente a tu sueldo base (<strong>Sueldo + Adicional</strong>) para proyectar tu flujo total real.
+            </p>
+          </div>
+
           <div className="p-3.5 bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs rounded-sm flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
             <div>
               <strong className="font-bold">Regla del 10% de Ahorro:</strong>
               <p className="text-[11px] text-indigo-800 mt-0.5">
-                El sistema reservará siempre el 10% de tu ingreso como ahorro protegido e intocable. Si algún gasto compromete este margen, se notificará explícitamente.
+                El sistema protegerá siempre el 10% de todos tus ingresos del mes (sueldo base + ingresos extras). Si algún gasto invade este margen de seguridad, serás alertado de inmediato.
               </p>
             </div>
           </div>

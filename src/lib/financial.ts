@@ -214,6 +214,21 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
     .toLowerCase()
     .trim();
 
+  // 1. Vehicle fuel & gasoline must NOT be confused with domestic gas utility
+  const isVehicleFuel =
+    fullText.includes('gasolina') ||
+    fullText.includes('gasohol') ||
+    fullText.includes('combustible') ||
+    fullText.includes('grifo') ||
+    fullText.includes('primax') ||
+    fullText.includes('repsol') ||
+    fullText.includes('pecsa') ||
+    fullText.includes('petroperu');
+
+  if (isVehicleFuel) {
+    return 'combustible_vehiculo';
+  }
+
   if (fullText.includes('mantenimiento')) return 'mantenimiento_edificio';
   if (
     fullText.includes('cochera') ||
@@ -256,9 +271,13 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
     return 'servicio_internet_telefono';
   }
   if (
-    fullText.includes('gas') ||
     fullText.includes('calidda') ||
-    fullText.includes('cálidda')
+    fullText.includes('cálidda') ||
+    fullText.includes('balon de gas') ||
+    fullText.includes('balón de gas') ||
+    fullText.includes('servicio de gas') ||
+    fullText.includes('recibo de gas') ||
+    (/\bgas\b/i.test(fullText) && !fullText.includes('gasto') && !fullText.includes('gastron') && !fullText.includes('gasfitero'))
   ) {
     return 'servicio_gas';
   }
@@ -285,6 +304,7 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
   ) {
     return 'pension_educativa';
   }
+  if (fullText.includes('paramount')) return 'suscripcion_paramount';
   if (fullText.includes('netflix')) return 'suscripcion_netflix';
   if (fullText.includes('spotify')) return 'suscripcion_spotify';
   if (fullText.includes('icloud') || fullText.includes('apple')) return 'suscripcion_apple_icloud';
@@ -341,9 +361,10 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
   return transactions.filter((t) => {
     if (t.tipo_operacion !== 'GASTO') return false;
 
-    // Credit card installment purchases are tracked separately in cuotas
-    if (t.metodo_pago === 'CREDITO' || (t.cuotas && t.cuotas > 1)) return false;
+    // Multi-installment credit card purchases (> 1 cuota) are tracked separately in cuotas projection
+    if (t.metodo_pago === 'CREDITO' && t.cuotas > 1) return false;
 
+    // Vehicle fuel (Gasolina, Repsol, Primax) is an operational variable expense, not a fixed home utility
     const text = (
       (t.titulo_resumen || '') +
       ' ' +
@@ -352,6 +373,31 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       t.items.map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
 
+    const isVehicleFuel =
+      text.includes('gasolina') ||
+      text.includes('gasohol') ||
+      text.includes('combustible') ||
+      text.includes('grifo') ||
+      text.includes('primax') ||
+      text.includes('repsol') ||
+      text.includes('pecsa') ||
+      text.includes('petroperu');
+
+    if (isVehicleFuel && t.es_gasto_fijo !== true) return false;
+
+    // 1. Explicitly marked as fixed by user, badge, or recurring settings
+    if (t.es_gasto_fijo === true) return true;
+    if (t.frecuencia_recurrencia === 'MENSUAL') return true;
+
+    // 2. Pending commitments with payment day or fixed keywords
+    if (t.estado_pago === 'PENDIENTE' && Boolean(t.dia_pago_mensual)) return true;
+
+    // Explicitly cancelled or marked as not fixed for executed historical one-time purchases
+    if (t.es_gasto_fijo === false && t.frecuencia_recurrencia === 'PUNTUAL' && t.estado_pago !== 'PENDIENTE') {
+      return false;
+    }
+
+    // 3. Keyword heuristic detection
     const isCleaningOrGrocery =
       text.includes('limpieza') ||
       text.includes('aseo') ||
@@ -377,7 +423,13 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       text.includes('luz') ||
       text.includes('agua') ||
       text.includes('internet') ||
-      text.includes('gas') ||
+      text.includes('calidda') ||
+      text.includes('cálidda') ||
+      text.includes('servicio de gas') ||
+      text.includes('recibo de gas') ||
+      text.includes('balon de gas') ||
+      text.includes('balón de gas') ||
+      (/\bgas\b/i.test(text) && !text.includes('gasto') && !text.includes('gastron') && !text.includes('gasfitero')) ||
       text.includes('telefono') ||
       text.includes('teléfono') ||
       text.includes('celular') ||
@@ -390,29 +442,19 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       text.includes('gimnasio') ||
       text.includes('seguro') ||
       text.includes('arbitrios') ||
+      text.includes('paramount') ||
       text.includes('netflix') ||
       text.includes('spotify') ||
       text.includes('icloud') ||
       text.includes('prime') ||
       text.includes('disney') ||
       text.includes('hbo') ||
-      text.includes('paramount') ||
       text.includes('youtube') ||
       text.includes('max') ||
       text.includes('apple') ||
       text.includes('cada mes');
 
-    if (t.es_gasto_fijo === true) return true;
-    if (t.frecuencia_recurrencia === 'MENSUAL') return true;
-    if (Boolean(t.dia_pago_mensual)) return true;
     if (hasFixedKeyword) return true;
-
-    // Explicitly cancelled or marked as not fixed
-    if (t.es_gasto_fijo === false) return false;
-
-    if (t.estado_pago === 'PENDIENTE' && Boolean(t.dia_pago_mensual)) {
-      return true;
-    }
 
     return false;
   });
@@ -426,23 +468,24 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
 export const getLatestFixedExpenses = (transactions: TransactionRecord[]): TransactionRecord[] => {
   const rawFixed = filterRawFixedExpenses(transactions);
 
-  // Sort by date descending (latest date first) and prefer PENDIENTE status when dates are same month
+  // Sort by prioritizing PENDIENTE commitments (unpaid upcoming receipts) first,
+  // then explicitly marked es_gasto_fijo, then date descending.
   const sorted = [...rawFixed].sort((a, b) => {
+    // 1. Pending commitments take highest precedence
+    if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
+    if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
+
+    // 2. Explicitly marked as fixed
+    if (a.es_gasto_fijo === true && b.es_gasto_fijo !== true) return -1;
+    if (b.es_gasto_fijo === true && a.es_gasto_fijo !== true) return 1;
+
+    // 3. Most recent date
     const dateA = new Date(a.fecha);
     const dateB = new Date(b.fecha);
-    const sameMonth = dateA.getFullYear() === dateB.getFullYear() && dateA.getMonth() === dateB.getMonth();
-    
-    if (sameMonth) {
-      if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
-      if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
-    }
-
     const timeA = dateA.getTime();
     const timeB = dateB.getTime();
     if (timeA !== timeB) return timeB - timeA;
-    if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
-    if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
-    return 0;
+    return (b.id || '').localeCompare(a.id || '');
   });
 
   const latestMap = new Map<string, TransactionRecord>();
@@ -454,6 +497,74 @@ export const getLatestFixedExpenses = (transactions: TransactionRecord[]): Trans
   });
 
   return Array.from(latestMap.values());
+};
+
+/**
+ * Checks if an income transaction corresponds to the regular base monthly salary (nómina/haberes/planilla).
+ * Incomes that are freelance, bonuses, sales, commissions, or other extras are classified as additional incomes.
+ */
+export const isSalaryIncomeTransaction = (tx: TransactionRecord): boolean => {
+  if (tx.tipo_operacion !== 'INGRESO') return false;
+
+  const text = (
+    (tx.titulo_resumen || '') +
+    ' ' +
+    (tx.comercio || '') +
+    ' ' +
+    (tx.mensaje_usuario || '') +
+    ' ' +
+    tx.items.map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
+  ).toLowerCase();
+
+  // Explicit salary phrases (nómina, haberes, adelantos de sueldo, quincena, etc.)
+  const isExplicitSalaryPhrase =
+    text.includes('sueldo') ||
+    text.includes('salario') ||
+    text.includes('adelanto') ||
+    text.includes('anticipo') ||
+    text.includes('quincena') ||
+    text.includes('nómina') ||
+    text.includes('nomina') ||
+    text.includes('planilla') ||
+    text.includes('remuneracion') ||
+    text.includes('remuneración') ||
+    text.includes('haberes') ||
+    text.includes('a cuenta de sueldo') ||
+    text.includes('pago mensual') ||
+    tx.frecuencia_recurrencia === 'MENSUAL';
+
+  const isExtraOrFreelance =
+    text.includes('extra') ||
+    text.includes('adicional') ||
+    text.includes('freelance') ||
+    text.includes('honorario') ||
+    text.includes('bono') ||
+    text.includes('comision') ||
+    text.includes('comisión') ||
+    text.includes('venta') ||
+    text.includes('interes') ||
+    text.includes('interés') ||
+    text.includes('rendimiento') ||
+    text.includes('dividendo') ||
+    text.includes('alquiler cobrado') ||
+    text.includes('cashback') ||
+    text.includes('reembolso') ||
+    text.includes('devolucion') ||
+    text.includes('devolución') ||
+    text.includes('premio') ||
+    text.includes('regalo') ||
+    text.includes('propina');
+
+  // If it mentions salary/adelanto/quincena, treat as base salary advance
+  if (isExplicitSalaryPhrase) {
+    // Only exclude if it's explicitly marked as an extra bonus on top of salary
+    if (text.includes('bono extra') || text.includes('ingreso adicional')) return false;
+    return true;
+  }
+
+  if (isExtraOrFreelance) return false;
+
+  return false;
 };
 
 /**

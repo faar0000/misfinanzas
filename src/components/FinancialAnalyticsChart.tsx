@@ -11,7 +11,12 @@ import {
   Tooltip,
 } from 'recharts';
 import { TransactionRecord, CATEGORIAS_BASE, BudgetSummary } from '../types';
-import { getNormalizedCategoryName, getFinancialTier, PyGPersonalTier } from '../lib/financial';
+import {
+  getNormalizedCategoryName,
+  getFinancialTier,
+  PyGPersonalTier,
+  isSalaryIncomeTransaction,
+} from '../lib/financial';
 import {
   PieChart as PieIcon,
   BarChart3,
@@ -253,7 +258,8 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
 
   // Calculate Standard Personal P&G (Estado de Resultados) and EBITDA Personal metrics
   const pygMetrics = useMemo(() => {
-    let ingresosBrutos = 0;
+    let sueldoCobrado = 0;
+    let extrasCobrados = 0;
     let subsistencia = 0; // Costos Fijos Estructurales (Existir)
     let operativoVariable = 0; // Costos Variables Operativos
     let discrecional = 0; // Estilo de Vida y Ocio
@@ -261,14 +267,16 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
 
     filteredTransactions.forEach((tx) => {
       if (tx.tipo_operacion === 'INGRESO' && tx.estado_pago !== 'PENDIENTE') {
-        ingresosBrutos += tx.monto_total;
+        if (isSalaryIncomeTransaction(tx)) {
+          sueldoCobrado += tx.monto_total;
+        } else {
+          extrasCobrados += tx.monto_total;
+        }
       }
     });
 
-    // Fallback if no specific income transaction is recorded for selected month
-    if (ingresosBrutos === 0) {
-      ingresosBrutos = summary.ingresoMensual;
-    }
+    const baseSueldo = Math.max(summary.ingresoMensual, sueldoCobrado);
+    const ingresosBrutos = baseSueldo + extrasCobrados;
 
     filteredTransactions.forEach((tx) => {
       if (tx.tipo_operacion === 'GASTO') {

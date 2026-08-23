@@ -266,11 +266,17 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
    - Cuotas de Crédito Activas: S/. ${budgetInfo.cuotasCredito}
    - Gastos Variables Acumulados: S/. ${budgetInfo.gastosVariables}
 
-2. Registro de Ingresos Parciales o Quincenales:
-   - Si la operación es un INGRESO (cobro de sueldo, adelanto, pago parcial, venta, freelance, etc.):
+2. Registro de Ingresos (Sueldo Base vs Ingreso Adicional / Extra):
+   - Si la operación es un INGRESO:
      * tipo_operacion = "INGRESO"
      * categoria_principal = "Ingresos"
-     * subcategoria = "Sueldo parcial" / "Adelanto quincena" / "Ingreso adicional"
+     * Si es el sueldo base mensual regular, nómina o adelanto quincenal de sueldo:
+       - subcategoria = "Sueldo mensual" o "Quincena"
+       - frecuencia_recurrencia = "MENSUAL"
+     * Si es un ingreso extra, adicional, freelance, venta, honorarios, consultoría, bono o premio:
+       - subcategoria = "Ingreso adicional" / "Freelance" / "Bono" / "Venta"
+       - frecuencia_recurrencia = "PUNTUAL"
+       - NOTA: Este ingreso extra se suma al sueldo fijo base mensual (Sueldo + Adicional) incrementando el flujo total del mes.
 
 3. Desglose de Boletas / Comprobantes (Visión / OCR):
    - Si se incluye una imagen de boleta o ticket, analiza CADA ÍTEM individualmente.

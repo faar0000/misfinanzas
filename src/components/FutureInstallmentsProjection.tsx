@@ -1,7 +1,128 @@
 import React, { useState } from 'react';
-import { CreditCard, Calendar, CheckCircle2, Building2, Filter, Repeat, HelpCircle, ChevronDown, ChevronUp, X, Bell, ArrowRight, Clock } from 'lucide-react';
+import {
+  CreditCard,
+  Calendar,
+  CheckCircle2,
+  Building2,
+  Filter,
+  Repeat,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Bell,
+  ArrowRight,
+  Clock,
+  Dumbbell,
+  Tv,
+  Wifi,
+  Zap,
+  Droplets,
+  Flame,
+  Home,
+  Car,
+  GraduationCap,
+  Shield,
+} from 'lucide-react';
 import { TransactionRecord } from '../types';
 import { getLatestFixedExpenses, getRecurringConceptKey, isUpcomingDueDateAlert } from '../lib/financial';
+
+// Helper to get category icon for fixed expenses
+const getFixedExpenseIcon = (tx: TransactionRecord) => {
+  const fullText = (
+    (tx.titulo_resumen || '') +
+    ' ' +
+    (tx.items[0]?.concepto || '') +
+    ' ' +
+    (tx.items[0]?.subcategoria || '') +
+    ' ' +
+    (tx.items[0]?.categoria_principal || '')
+  ).toLowerCase();
+
+  if (
+    fullText.includes('gym') ||
+    fullText.includes('gimnasio') ||
+    fullText.includes('smartfit') ||
+    fullText.includes('smart fit') ||
+    fullText.includes('entrenamiento')
+  ) {
+    return <Dumbbell className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('netflix') ||
+    fullText.includes('spotify') ||
+    fullText.includes('disney') ||
+    fullText.includes('hbo') ||
+    fullText.includes('max') ||
+    fullText.includes('prime') ||
+    fullText.includes('youtube') ||
+    fullText.includes('suscripci') ||
+    fullText.includes('streaming')
+  ) {
+    return <Tv className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('internet') ||
+    fullText.includes('cable') ||
+    fullText.includes('wifi') ||
+    fullText.includes('claro') ||
+    fullText.includes('movistar') ||
+    fullText.includes('win') ||
+    fullText.includes('entel') ||
+    fullText.includes('telefono') ||
+    fullText.includes('teléfono') ||
+    fullText.includes('celular')
+  ) {
+    return <Wifi className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('luz') ||
+    fullText.includes('electricidad') ||
+    fullText.includes('enel') ||
+    fullText.includes('luz del sur')
+  ) {
+    return <Zap className="w-4 h-4 text-purple-600" />;
+  }
+  if (fullText.includes('agua') || fullText.includes('sedapal')) {
+    return <Droplets className="w-4 h-4 text-purple-600" />;
+  }
+  if (fullText.includes('gas') || fullText.includes('calidda') || fullText.includes('cálidda')) {
+    return <Flame className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('mantenimiento') ||
+    fullText.includes('alquiler') ||
+    fullText.includes('departamento') ||
+    fullText.includes('depa') ||
+    fullText.includes('vivienda') ||
+    fullText.includes('hogar')
+  ) {
+    return <Home className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('cochera') ||
+    fullText.includes('estacionamiento') ||
+    fullText.includes('parqueo') ||
+    fullText.includes('auto') ||
+    fullText.includes('vehic')
+  ) {
+    return <Car className="w-4 h-4 text-purple-600" />;
+  }
+  if (
+    fullText.includes('colegio') ||
+    fullText.includes('escuela') ||
+    fullText.includes('universidad') ||
+    fullText.includes('pension') ||
+    fullText.includes('pensión')
+  ) {
+    return <GraduationCap className="w-4 h-4 text-purple-600" />;
+  }
+  if (fullText.includes('seguro') || fullText.includes('eps')) {
+    return <Shield className="w-4 h-4 text-purple-600" />;
+  }
+
+  return <Repeat className="w-4 h-4 text-purple-600" />;
+};
 
 interface FutureInstallmentsProjectionProps {
   transactions: TransactionRecord[];
@@ -39,7 +160,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
 
   // Sort strictly by due day (dia_pago_mensual) in ascending order (earliest due date first)
   const fixedExpensesList = rawFixedExpensesList
-    .filter((tx) => tx.es_gasto_fijo !== false)
+    .filter((tx) => tx.es_gasto_fijo === true || tx.estado_pago === 'PENDIENTE' || tx.frecuencia_recurrencia === 'MENSUAL' || tx.es_gasto_fijo !== false)
     .sort((a, b) => {
       const dueA = a.dia_pago_mensual || 21;
       const dueB = b.dia_pago_mensual || 21;
@@ -271,7 +392,6 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
               {fixedExpensesList.map((tx) => {
                 const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
-                const subCat = tx.items[0]?.subcategoria || tx.items[0]?.categoria_principal || 'Servicios';
                 const isPendiente = tx.estado_pago === 'PENDIENTE';
                 const dueDay = tx.dia_pago_mensual || 21;
                 const daysRemaining = dueDay - currentDay;
@@ -280,7 +400,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 return (
                   <div
                     key={tx.id}
-                    className={`p-3.5 border rounded-sm flex items-center justify-between relative group transition-all shadow-xs ${
+                    className={`p-3 border rounded-sm flex items-center justify-between relative group transition-all shadow-xs ${
                       isUrgent
                         ? 'bg-amber-100/80 border-amber-500 ring-2 ring-amber-400/80'
                         : isPendiente
@@ -298,34 +418,49 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                       <X className="w-3 h-3 stroke-[3]" />
                     </button>
 
-                    <div className="min-w-0 pr-2">
-                      <div className="font-bold text-xs text-slate-900 truncate max-w-[150px] sm:max-w-[170px] flex items-center gap-1.5">
-                        <span className="truncate">{title}</span>
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                      <div
+                        className={`w-8 h-8 rounded-sm flex items-center justify-center shrink-0 border ${
+                          isUrgent
+                            ? 'bg-amber-200/80 border-amber-400'
+                            : isPendiente
+                            ? 'bg-amber-100/70 border-amber-300'
+                            : 'bg-white border-purple-200 shadow-2xs'
+                        }`}
+                      >
+                        {getFixedExpenseIcon(tx)}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5 flex-wrap">
-                        <span>{subCat}</span>
-                        <span>•</span>
-                        {isPendiente ? (
-                          isUrgent ? (
-                            <span className="text-amber-950 font-black bg-amber-300 border border-amber-500 px-1.5 py-0.2 rounded-xs flex items-center gap-1 animate-pulse">
-                              <Bell className="w-2.5 h-2.5 text-amber-900 fill-amber-700" />
-                              <span>
-                                {daysRemaining <= 0
-                                  ? `⚡ Vence hoy (Día ${dueDay})`
-                                  : `⚡ Quedan ${daysRemaining}d (Día ${dueDay})`}
+
+                      <div className="min-w-0">
+                        <div
+                          className="font-bold text-xs text-slate-900 truncate max-w-[130px] sm:max-w-[150px] md:max-w-[170px]"
+                          title={title}
+                        >
+                          {title}
+                        </div>
+                        <div className="mt-0.5">
+                          {isPendiente ? (
+                            isUrgent ? (
+                              <span className="text-amber-950 font-black bg-amber-300 border border-amber-500 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px] animate-pulse">
+                                <Bell className="w-2.5 h-2.5 text-amber-900 fill-amber-700" />
+                                <span>
+                                  {daysRemaining <= 0
+                                    ? `⚡ Vence hoy (Día ${dueDay})`
+                                    : `⚡ Quedan ${daysRemaining}d (Día ${dueDay})`}
+                                </span>
                               </span>
-                            </span>
+                            ) : (
+                              <span className="text-amber-900 font-semibold bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px]">
+                                <Clock className="w-2.5 h-2.5 text-amber-700" />
+                                <span>Vence día {dueDay}</span>
+                              </span>
+                            )
                           ) : (
-                            <span className="text-amber-900 font-semibold bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-xs flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5 text-amber-700" />
-                              <span>Vence día {dueDay}</span>
+                            <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px]">
+                              ✓ Pagado
                             </span>
-                          )
-                        ) : (
-                          <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-xs">
-                            ✓ Pagado
-                          </span>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
 

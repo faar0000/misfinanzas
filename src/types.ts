@@ -46,9 +46,12 @@ export interface BudgetConfig {
 }
 
 export interface BudgetSummary {
-  ingresoMensual: number;
-  ingresosCobradosTotal: number;
-  montoPendienteCobrar: number;
+  ingresoMensual: number; // Base configured salary
+  ingresosSueldoCobrados: number; // Salary received so far this month
+  ingresosAdicionalesCobrados: number; // Extra / additional income received this month
+  ingresosCobradosTotal: number; // Total actual cash received in bank
+  ingresoTotalProyectadoMes: number; // Projected total month income (Base Salary + Extras)
+  montoPendienteCobrar: number; // Base salary remaining to be collected
   porcentajeCobrado: number;
   metaAhorroMonto: number;
   gastosTotalesProyectados: number;

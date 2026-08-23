@@ -24,7 +24,13 @@ import {
   googleSignIn,
   logoutGoogle,
 } from './lib/googleAuth';
-import { getLatestFixedExpenses, getRecurringConceptKey, areSameRecurringConcept, isUpcomingDueDateAlert } from './lib/financial';
+import {
+  getLatestFixedExpenses,
+  getRecurringConceptKey,
+  areSameRecurringConcept,
+  isUpcomingDueDateAlert,
+  isSalaryIncomeTransaction,
+} from './lib/financial';
 import {
   getOrCreateFinancialSpreadsheet,
   syncDataToGoogleSheets,
@@ -184,8 +190,60 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
   },
 ];
 
+const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => {
+  return txs.map((tx) => {
+    // Heal orphaned pending recurring expenses:
+    // If a transaction is marked PENDIENTE and is a fixed service concept (internet, gas, alquiler, luz, etc.)
+    // but was degraded to PUNTUAL or es_gasto_fijo: false, restore its recurring fixed state.
+    const text = (
+      (tx.titulo_resumen || '') +
+      ' ' +
+      (tx.comercio || '') +
+      ' ' +
+      (tx.items?.[0]?.concepto || '') +
+      ' ' +
+      (tx.items?.[0]?.subcategoria || '') +
+      ' ' +
+      (tx.items?.[0]?.categoria_principal || '')
+    ).toLowerCase();
+
+    const isRecurringKeyword =
+      text.includes('internet') ||
+      text.includes('gas') ||
+      text.includes('calidda') ||
+      text.includes('cálidda') ||
+      text.includes('luz') ||
+      text.includes('agua') ||
+      text.includes('alquiler') ||
+      text.includes('cochera') ||
+      text.includes('paramount') ||
+      text.includes('netflix') ||
+      text.includes('spotify') ||
+      text.includes('suscripci') ||
+      text.includes('mantenimiento') ||
+      text.includes('colegio') ||
+      text.includes('universidad') ||
+      text.includes('pension') ||
+      text.includes('pensión') ||
+      text.includes('gym') ||
+      text.includes('gimnasio') ||
+      text.includes('seguro') ||
+      Boolean(tx.dia_pago_mensual);
+
+    if (tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && isRecurringKeyword && (tx.cuotas <= 1 || !tx.cuotas)) {
+      return {
+        ...tx,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL' as const,
+      };
+    }
+    return tx;
+  });
+};
+
 const sortTransactionsByDateDesc = (txs: TransactionRecord[]): TransactionRecord[] => {
-  return [...txs].sort((a, b) => {
+  const sanitized = sanitizeTransactions(txs);
+  return [...sanitized].sort((a, b) => {
     const dateComp = (b.fecha || '').localeCompare(a.fecha || '');
     if (dateComp !== 0) return dateComp;
     return (b.id || '').localeCompare(a.id || '');
@@ -481,6 +539,8 @@ export default function App() {
 
   // Compute live budget summary based on actual cash flows and last paid month value for recurring services
   let ingresosCobradosTotal = 0;
+  let ingresosSueldoCobrados = 0;
+  let ingresosAdicionalesCobrados = 0;
   let cuotasCredito = 0;
   let cuotasCreditoPendientes = 0;
   let gastosVariables = 0;
@@ -507,6 +567,11 @@ export default function App() {
     if (tx.tipo_operacion === 'INGRESO') {
       if (isCurrentMonth) {
         ingresosCobradosTotal += tx.monto_total;
+        if (isSalaryIncomeTransaction(tx)) {
+          ingresosSueldoCobrados += tx.monto_total;
+        } else {
+          ingresosAdicionalesCobrados += tx.monto_total;
+        }
       }
     } else if (tx.tipo_operacion === 'GASTO') {
       const esPendiente = tx.estado_pago === 'PENDIENTE';
@@ -539,7 +604,7 @@ export default function App() {
     .filter(
       (t) =>
         t.tipo_operacion === 'GASTO' &&
-        t.es_gasto_fijo &&
+        (t.es_gasto_fijo || fixedExpensesIdSet.has(t.id)) &&
         t.estado_pago !== 'PENDIENTE' &&
         t.fecha.startsWith(currentMonthStr)
     )
@@ -548,27 +613,40 @@ export default function App() {
   // Unpaid/remaining fixed expenses for this month
   const gastosFijosPendientesDelMes = Math.max(0, gastosFijos - gastosFijosPagadosEsteMes);
 
-  // Effective income baseline for 10% protected savings
-  const ingresoMensualEsperado = Math.max(config.ingresoMensual, ingresosCobradosTotal);
-  const metaAhorroMonto = (ingresoMensualEsperado * config.porcentajeAhorroMeta) / 100;
+  // Base salary remaining to be collected (does NOT decrease when additional extra incomes are received)
+  const montoPendienteCobrar = Math.max(0, config.ingresoMensual - ingresosSueldoCobrados);
 
-  // Projected total = Gastos al momento (gastosEjecutadosReal) + Gastos Fijos (gastosFijos) + Cuotas Crédito Pendientes
-  const gastosTotalesProyectados = gastosEjecutadosReal + gastosFijos + cuotasCreditoPendientes;
+  // Total projected income for this month: Base expected salary + all extra/additional incomes
+  const ingresoBaseEfectivo = Math.max(config.ingresoMensual, ingresosSueldoCobrados);
+  const ingresoTotalProyectadoMes = ingresoBaseEfectivo + ingresosAdicionalesCobrados;
+
+  // Effective income baseline for 10% protected savings (covers base salary + extra incomes)
+  const metaAhorroMonto = (ingresoTotalProyectadoMes * config.porcentajeAhorroMeta) / 100;
+
+  // Projected total = Gastos al momento (gastosEjecutadosReal) + Compromisos pendientes de pago por vencer este mes
+  // Eliminates duplication: already paid fixed expenses are only counted once in gastosEjecutadosReal.
+  const compromisosPendientesFinDeMes = Math.max(
+    gastosPendientesTotal,
+    gastosFijosPendientesDelMes + cuotasCreditoPendientes
+  );
+  const gastosTotalesProyectados = gastosEjecutadosReal + compromisosPendientesFinDeMes;
   // Actual money in bank account = total income minus actual executed payments
   const saldoBancoReal = ingresosCobradosTotal - gastosEjecutadosReal;
   // Free money after protecting 10% savings
   const dineroLibreDisponible = saldoBancoReal - metaAhorroMonto;
   const alertaAhorroComprometido = dineroLibreDisponible < 0;
 
-  const montoPendienteCobrar = Math.max(0, config.ingresoMensual - ingresosCobradosTotal);
   const porcentajeCobrado = Math.min(
     100,
-    Math.round((ingresosCobradosTotal / Math.max(1, config.ingresoMensual)) * 100)
+    Math.round((ingresosCobradosTotal / Math.max(1, ingresoTotalProyectadoMes)) * 100)
   );
 
   const budgetSummary: BudgetSummary = {
     ingresoMensual: config.ingresoMensual,
+    ingresosSueldoCobrados,
+    ingresosAdicionalesCobrados,
     ingresosCobradosTotal,
+    ingresoTotalProyectadoMes,
     montoPendienteCobrar,
     porcentajeCobrado,
     metaAhorroMonto,
@@ -870,27 +948,41 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
   const handleCancelFixedExpense = (tx: TransactionRecord) => {
     const targetKey = getRecurringConceptKey(tx);
     const updated = sortTransactionsByDateDesc(
-      transactions.map((t) => {
-        if (
-          t.id === tx.id ||
-          getRecurringConceptKey(t) === targetKey ||
-          areSameRecurringConcept(t, tx)
-        ) {
-          return {
-            ...t,
-            es_gasto_fijo: false,
-            frecuencia_recurrencia: 'PUNTUAL' as const,
-          };
-        }
-        return t;
-      })
+      transactions
+        .filter((t) => {
+          const isSame =
+            t.id === tx.id ||
+            getRecurringConceptKey(t) === targetKey ||
+            areSameRecurringConcept(t, tx);
+
+          // If it is the same recurring concept and it is PENDING, delete it completely
+          if (isSame && t.estado_pago === 'PENDIENTE') {
+            return false;
+          }
+          return true;
+        })
+        .map((t) => {
+          const isSame =
+            t.id === tx.id ||
+            getRecurringConceptKey(t) === targetKey ||
+            areSameRecurringConcept(t, tx);
+
+          if (isSame) {
+            return {
+              ...t,
+              es_gasto_fijo: false,
+              frecuencia_recurrencia: 'PUNTUAL' as const,
+            };
+          }
+          return t;
+        })
     );
     setTransactions(updated);
 
     const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
     setSuccessNotification({
       titulo: `Gasto Fijo / Suscripción Cancelado: ${title}`,
-      mensaje: 'Removido de tus compromisos fijos mensuales. Tus presupuestos y proyecciones se han recalculado automáticamente.',
+      mensaje: 'Compromiso eliminado correctamente de tus gastos fijos y proyecciones presupuestarias.',
       monto: tx.monto_total,
       tipo: 'GASTO',
       esGastoFijo: false,

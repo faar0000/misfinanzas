@@ -30,7 +30,10 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
 
   const {
     ingresoMensual,
+    ingresosSueldoCobrados = 0,
+    ingresosAdicionalesCobrados = 0,
     ingresosCobradosTotal,
+    ingresoTotalProyectadoMes = ingresoMensual,
     montoPendienteCobrar,
     porcentajeCobrado,
     metaAhorroMonto,
@@ -159,7 +162,10 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
               />
             </div>
             <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-              <span className="truncate">Base: {monedaSimbolo}{ingresoMensual.toFixed(0)}</span>
+              <span className="truncate">
+                Base: {monedaSimbolo}{ingresoTotalProyectadoMes.toFixed(0)}
+                {ingresosAdicionalesCobrados > 0 ? ` (Sueldo + Extra)` : ''}
+              </span>
               <span className="font-semibold text-slate-700 dark:text-slate-300">10%</span>
             </div>
           </div>
@@ -184,11 +190,27 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
             </div>
           </div>
 
-          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
-            {montoPendienteCobrar > 0
-              ? `Pendiente: ${monedaSimbolo} ${montoPendienteCobrar.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              : 'Sueldo completo abonado'}
-          </p>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
+            {montoPendienteCobrar > 0 ? (
+              ingresosAdicionalesCobrados > 0 ? (
+                <span>
+                  Sueldo pend: {monedaSimbolo}{montoPendienteCobrar.toFixed(0)} | Extra: +{monedaSimbolo}{ingresosAdicionalesCobrados.toFixed(0)}
+                </span>
+              ) : (
+                <span>
+                  Sueldo pend: {monedaSimbolo}{montoPendienteCobrar.toFixed(0)} de {monedaSimbolo}{ingresoMensual.toFixed(0)}
+                </span>
+              )
+            ) : (
+              ingresosAdicionalesCobrados > 0 ? (
+                <span>
+                  Sueldo abonado + {monedaSimbolo}{ingresosAdicionalesCobrados.toFixed(0)} extra (Total: {monedaSimbolo}{ingresoTotalProyectadoMes.toFixed(0)})
+                </span>
+              ) : (
+                <span>Sueldo completo abonado ({monedaSimbolo}{ingresoMensual.toFixed(0)})</span>
+              )
+            )}
+          </div>
         </div>
 
         {/* Card 3: Gastos (Proyectados / Ejecutados) */}
@@ -249,7 +271,9 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
 
           <div className="text-[9px] sm:text-[10px] font-mono text-slate-500 dark:text-slate-400 mt-1 truncate">
             {expenseViewMode === 'proyectado' ? (
-              <span>Moment: {gastosEjecutadosReal.toFixed(0)} + Fij: {gastosFijos.toFixed(0)}</span>
+              <span>
+                Ejecutado: {gastosEjecutadosReal.toFixed(0)} + Por pagar: {Math.max(0, gastosTotalesProyectados - gastosEjecutadosReal).toFixed(0)}
+              </span>
             ) : (
               <span>Pagado: {gastosEjecutadosReal.toFixed(0)} | Pend: {gastosPendientesTotal.toFixed(0)}</span>
             )}
@@ -262,16 +286,16 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
                 <span>💡 Cómputo de Gastos</span>
                 <button
                   onClick={() => setShowExpenseInfo(false)}
-                  className="text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200 font-bold"
+                  className="text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200 font-bold cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
               <p>
-                • <strong>Fin de Mes (Proyectado):</strong> Gastos ejecutados ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}) + Fijos ({monedaSimbolo} {gastosFijos.toFixed(2)}) = {monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}.
+                • <strong>Fin de Mes (Proyectado):</strong> Gastos ya ejecutados ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}) + Compromisos pendientes por vencer ({monedaSimbolo} {Math.max(0, gastosTotalesProyectados - gastosEjecutadosReal).toFixed(2)}) = {monedaSimbolo} {gastosTotalesProyectados.toFixed(2)}. <em>(Sin duplicar servicios fijos ya pagados)</em>.
               </p>
               <p>
-                • <strong>Al Momento (Ejecutado):</strong> Compras y salidas reales pagadas ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}).
+                • <strong>Al Momento (Ejecutado):</strong> Salidas reales que ya salieron de tu cuenta/banco este mes ({monedaSimbolo} {gastosEjecutadosReal.toFixed(2)}).
               </p>
             </div>
           )}
