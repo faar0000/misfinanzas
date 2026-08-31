@@ -85,18 +85,109 @@ export const getNormalizedCategoryName = (
     return 'Vehículo';
   }
 
-  // 3. Household, Services, Cleaning, Repairs, Kitchen Utensils, Donations
-  const isServicesOrHousehold =
+  // 3. Home Equipment, Furniture, Scale, Appliances, Hardware, Home Repairs & Supplies (CAPEX / Variables)
+  const isHouseholdEquipmentOrRepair =
+    c.includes('mueble') ||
+    c.includes('equipamiento') ||
+    c.includes('ferreter') ||
+    s.includes('mueble') ||
+    s.includes('balanza') ||
+    s.includes('electrodom') ||
+    s.includes('lavadora') ||
+    s.includes('refrigerador') ||
+    s.includes('nevera') ||
+    s.includes('microondas') ||
+    s.includes('licuadora') ||
+    s.includes('artículos para el hogar') ||
+    s.includes('articulos para el hogar') ||
+    s.includes('menaje') ||
+    s.includes('utensilio') ||
+    s.includes('cocina') ||
+    s.includes('reparaci') ||
+    s.includes('arreglo') ||
+    s.includes('gasfiter') ||
+    s.includes('fontaner') ||
+    s.includes('electricista') ||
+    s.includes('pintura') ||
+    s.includes('cerrajer') ||
+    s.includes('herramienta') ||
+    s.includes('ferreter') ||
+    s.includes('decoraci') ||
+    s.includes('limpieza') ||
+    k.includes('mueble') ||
+    k.includes('mesa') ||
+    k.includes('silla') ||
+    k.includes('escritorio') ||
+    k.includes('cama') ||
+    k.includes('colchón') ||
+    k.includes('colchon') ||
+    k.includes('ropero') ||
+    k.includes('closet') ||
+    k.includes('sillón') ||
+    k.includes('sillon') ||
+    k.includes('sofa') ||
+    k.includes('sofá') ||
+    k.includes('balanza') ||
+    k.includes('lavadora') ||
+    k.includes('secadora') ||
+    k.includes('refrigerador') ||
+    k.includes('nevera') ||
+    k.includes('microondas') ||
+    k.includes('licuadora') ||
+    k.includes('cafetera') ||
+    k.includes('tostadora') ||
+    k.includes('hervidor') ||
+    k.includes('freidora') ||
+    k.includes('air fryer') ||
+    k.includes('televisor') ||
+    k.includes('plancha') ||
+    k.includes('aspiradora') ||
+    k.includes('ventilador') ||
+    k.includes('electrodom') ||
+    k.includes('reparaci') ||
+    k.includes('arreglo') ||
+    k.includes('gasfiter') ||
+    k.includes('fontaner') ||
+    k.includes('electricista') ||
+    k.includes('cerrajer') ||
+    k.includes('pintura') ||
+    k.includes('utensilio') ||
+    k.includes('olla') ||
+    k.includes('sartén') ||
+    k.includes('sarten') ||
+    k.includes('vajilla') ||
+    k.includes('cubierto') ||
+    k.includes('cortina') ||
+    k.includes('lámpara') ||
+    k.includes('lampara') ||
+    k.includes('sábana') ||
+    k.includes('sabana') ||
+    k.includes('almohada') ||
+    k.includes('toalla') ||
+    k.includes('alfombra') ||
+    k.includes('ferreter') ||
+    k.includes('taladro') ||
+    k.includes('tornillo') ||
+    k.includes('martillo') ||
+    k.includes('clavo') ||
+    k.includes('foco') ||
+    k.includes('bombilla') ||
+    k.includes('enchufe') ||
+    k.includes('limpieza') ||
+    k.includes('detergente') ||
+    k.includes('escoba') ||
+    k.includes('trapeador') ||
+    k.includes('donaci');
+
+  if (isHouseholdEquipmentOrRepair) {
+    return 'Hogar y Mantenimiento';
+  }
+
+  // 4. Fixed Recurring Structural Utilities & Contracts (OPEX)
+  const isServicesOrFixed =
     c.includes('servicios') ||
     c.includes('fijo') ||
     c.includes('vivienda') ||
-    c.includes('hogar') ||
-    c.includes('casa') ||
-    s.includes('limpieza') ||
-    s.includes('mantenimiento') ||
-    s.includes('reparaci') ||
-    s.includes('utensilio') ||
-    s.includes('cocina') ||
     s.includes('alquiler') ||
     s.includes('agua') ||
     s.includes('luz') ||
@@ -104,22 +195,30 @@ export const getNormalizedCategoryName = (
     s.includes('internet') ||
     s.includes('teléfono') ||
     s.includes('telefono') ||
+    s.includes('celular') ||
     s.includes('gas') ||
-    s.includes('donaci') ||
     s.includes('seguro') ||
     s.includes('educaci') ||
-    k.includes('limpieza') ||
-    k.includes('mantenimiento') ||
-    k.includes('reparaci') ||
-    k.includes('utensilio') ||
+    s.includes('mantenimiento de edificio') ||
+    s.includes('mantenimiento de condominio') ||
+    s.includes('suscripcion') ||
+    s.includes('suscripción') ||
     k.includes('alquiler') ||
-    k.includes('donaci');
+    k.includes('sedapal') ||
+    k.includes('enel') ||
+    k.includes('luz del sur') ||
+    k.includes('cálidda') ||
+    k.includes('calidda') ||
+    k.includes('balon de gas') ||
+    k.includes('balón de gas') ||
+    k.includes('arbitrio') ||
+    k.includes('predial');
 
-  if (isServicesOrHousehold) {
+  if (isServicesOrFixed) {
     return 'Servicios y Gastos Fijos';
   }
 
-  // 4. Credit & Debt Commitments
+  // 5. Credit & Debt Commitments
   const isCredit =
     c.includes('crédito') ||
     c.includes('credito') ||

@@ -4,10 +4,6 @@ import {
   Pie,
   Cell,
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
   Tooltip,
 } from 'recharts';
 import { TransactionRecord, CATEGORIAS_BASE, BudgetSummary } from '../types';
@@ -20,7 +16,6 @@ import {
 import {
   PieChart as PieIcon,
   BarChart3,
-  ShieldCheck,
   Calendar,
   Filter,
   Layers,
@@ -151,7 +146,7 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
     return Object.values(categoryTotals).reduce((sum: number, val: number) => sum + val, 0);
   }, [categoryTotals]);
 
-  // Donut chart pieData: top 5 categories individually + remaining grouped into "Otros"
+  // Donut chart pieData: all categories (or top 10 if more than 10)
   const { pieData, groupedOtrosCategories } = useMemo(() => {
     const rawList = Object.keys(categoryTotals)
       .map((catName) => {
@@ -166,12 +161,12 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
       })
       .sort((a, b) => b.value - a.value);
 
-    if (rawList.length <= 5) {
+    if (rawList.length <= 10) {
       return { pieData: rawList, groupedOtrosCategories: [] as string[] };
     }
 
-    const topCategories = rawList.slice(0, 5);
-    const minorCategories = rawList.slice(5);
+    const topCategories = rawList.slice(0, 9);
+    const minorCategories = rawList.slice(9);
     const otrosTotal = minorCategories.reduce((sum, item) => sum + item.value, 0);
     const groupedNames = minorCategories.map((c) => c.name);
 
@@ -335,30 +330,6 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
       flujoLibreFinal,
     };
   }, [filteredTransactions, selectedMonth, summary.ingresoMensual]);
-
-  // Bar chart data comparing Income vs Savings vs Expenses vs Free Money
-  const barData = [
-    {
-      name: 'Cobrado Banco',
-      Monto: summary.ingresosCobradosTotal,
-      fill: '#059669', // Emerald
-    },
-    {
-      name: 'Ahorro (10%)',
-      Monto: summary.metaAhorroMonto,
-      fill: '#4F46E5', // Indigo
-    },
-    {
-      name: 'Gastos Proyect.',
-      Monto: summary.gastosTotalesProyectados,
-      fill: summary.alertaAhorroComprometido ? '#E11D48' : '#D97706',
-    },
-    {
-      name: 'Dinero Libre',
-      Monto: Math.max(0, summary.dineroLibreDisponible),
-      fill: '#0284C7', // Sky
-    },
-  ];
 
   return (
     <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-6 mb-6">
@@ -616,165 +587,125 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Pie Chart: Expense Category Breakdown */}
-        <div className="bg-slate-50 p-4 rounded-sm border border-slate-200 flex flex-col justify-between relative">
-          <div className="w-full flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
-            <h3 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <PieIcon className="w-4 h-4 text-indigo-600" />
-              <span>Gastos por Categoría</span>
-              <span className="text-[10px] font-normal text-slate-500 lowercase">
-                ({selectedMonth === 'ALL' ? 'histórico' : formatMonthLabel(selectedMonth).replace('📅 ', '')})
-              </span>
-            </h3>
+      {/* Pie Chart: Expense Category Breakdown */}
+      <div className="w-full bg-slate-50 p-5 rounded-sm border border-slate-200 flex flex-col justify-between relative mb-6">
+        <div className="w-full flex items-center justify-between mb-3 pb-2 border-b border-slate-200">
+          <h3 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <PieIcon className="w-4 h-4 text-indigo-600" />
+            <span>Gastos por Categoría</span>
+            <span className="text-[10px] font-normal text-slate-500 lowercase">
+              ({selectedMonth === 'ALL' ? 'histórico' : formatMonthLabel(selectedMonth).replace('📅 ', '')})
+            </span>
+          </h3>
 
-            {pieData.length > 0 && (
-              <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-xs">
-                Total: {monedaSimbolo} {totalExpensesInSelectedPeriod.toFixed(2)}
-              </span>
-            )}
-          </div>
-
-          {pieData.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-xs italic">
-              No hay gastos registrados en este período para graficar.
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full h-full min-h-[220px]">
-              {/* Left side: Donut Chart */}
-              <div className="w-full sm:w-1/2 h-52 relative flex flex-col items-center justify-center shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={46}
-                      outerRadius={76}
-                      paddingAngle={3}
-                      dataKey="value"
-                      cursor="pointer"
-                      onClick={(entry) => {
-                        if (entry && entry.name) {
-                          setSelectedCategory((prev) => (prev === entry.name ? null : entry.name));
-                        }
-                      }}
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.color}
-                          stroke={selectedCategory === entry.name ? '#1E1B4B' : '#FFFFFF'}
-                          strokeWidth={selectedCategory === entry.name ? 3 : 1}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: any) => [
-                        `${monedaSimbolo} ${Number(value).toFixed(2)}`,
-                        'Monto',
-                      ]}
-                      contentStyle={{
-                        backgroundColor: '#1E293B',
-                        borderColor: '#334155',
-                        borderRadius: '2px',
-                        color: '#F8FAFC',
-                        fontSize: '11px',
-                        fontFamily: 'monospace',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="text-[10px] text-slate-400 text-center -mt-1 font-medium">
-                  💡 Toca un sector para filtrar
-                </div>
-              </div>
-
-              {/* Right side: Legend on horizontal layout */}
-              <div className="w-full sm:w-1/2 flex flex-col justify-center space-y-1.5 max-h-56 overflow-y-auto pr-1 border-t sm:border-t-0 sm:border-l border-slate-200 pt-3 sm:pt-0 sm:pl-3">
-                {pieData.map((cat, i) => {
-                  const isSelected = selectedCategory === cat.name;
-                  const percentage = totalExpensesInSelectedPeriod > 0
-                    ? ((cat.value / totalExpensesInSelectedPeriod) * 100).toFixed(1)
-                    : '0';
-
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setSelectedCategory((prev) => (prev === cat.name ? null : cat.name))}
-                      className={`w-full flex items-center justify-between text-left text-xs px-2.5 py-1.5 rounded-xs border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-indigo-900 text-white border-indigo-950 shadow-xs ring-2 ring-indigo-400 font-bold'
-                          : 'bg-white hover:bg-indigo-50/70 text-slate-700 border-slate-200 hover:border-indigo-300'
-                      }`}
-                      title={cat.name === 'Otros' && groupedOtrosCategories.length > 0 ? `Categorías agrupadas: ${groupedOtrosCategories.join(', ')}` : cat.name}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 pr-1">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: cat.color }} />
-                        <span className="truncate font-semibold text-xs">{cat.name}</span>
-                      </div>
-                      <div className="text-right shrink-0 flex items-center gap-1.5 font-mono text-[11px]">
-                        <span className={isSelected ? 'text-amber-300 font-bold' : 'text-slate-900 font-bold'}>
-                          {monedaSimbolo} {cat.value.toFixed(2)}
-                        </span>
-                        <span className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
-                          ({percentage}%)
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {groupedOtrosCategories.length > 0 && (
-                  <div className="text-[10px] text-slate-500 font-medium px-1 pt-1 italic">
-                    * 'Otros' agrupa {groupedOtrosCategories.length} categorías menores ({groupedOtrosCategories.slice(0, 3).join(', ')}{groupedOtrosCategories.length > 3 ? '...' : ''}).
-                  </div>
-                )}
-              </div>
-            </div>
+          {pieData.length > 0 && (
+            <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-xs">
+              Total: {monedaSimbolo} {totalExpensesInSelectedPeriod.toFixed(2)}
+            </span>
           )}
         </div>
 
-        {/* Bar Chart: Financial Balance Health */}
-        <div className="bg-slate-50 p-4 rounded-sm border border-slate-200 flex flex-col items-center">
-          <h3 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-3 w-full text-left flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-indigo-600" />
-            Balance de Salud Financiera Global
-          </h3>
-
-          <div className="w-full h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
-                <XAxis dataKey="name" stroke="#64748B" fontSize={10} tickLine={false} />
-                <YAxis stroke="#64748B" fontSize={10} tickLine={false} />
-                <Tooltip
-                  formatter={(value: any) => [
-                    `${monedaSimbolo} ${Number(value).toFixed(2)}`,
-                    'Monto',
-                  ]}
-                  contentStyle={{
-                    backgroundColor: '#1E293B',
-                    borderColor: '#334155',
-                    borderRadius: '2px',
-                    color: '#F8FAFC',
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                  }}
-                />
-                <Bar dataKey="Monto" radius={[2, 2, 0, 0]}>
-                  {barData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+        {pieData.length === 0 ? (
+          <div className="text-center py-12 text-slate-400 text-xs italic">
+            No hay gastos registrados en este período para graficar.
           </div>
+        ) : (
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-6 w-full h-full min-h-[320px]">
+            {/* Left side: Donut Chart (Enlarged) */}
+            <div className="w-full lg:w-[48%] h-72 sm:h-80 relative flex flex-col items-center justify-center shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={68}
+                    outerRadius={122}
+                    paddingAngle={3}
+                    dataKey="value"
+                    cursor="pointer"
+                    onClick={(entry) => {
+                      if (entry && entry.name) {
+                        setSelectedCategory((prev) => (prev === entry.name ? null : entry.name));
+                      }
+                    }}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.color}
+                        stroke={selectedCategory === entry.name ? '#1E1B4B' : '#FFFFFF'}
+                        strokeWidth={selectedCategory === entry.name ? 3 : 1}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: any) => [
+                      `${monedaSimbolo} ${Number(value).toFixed(2)}`,
+                      'Monto',
+                    ]}
+                    contentStyle={{
+                      backgroundColor: '#1E293B',
+                      borderColor: '#334155',
+                      borderRadius: '2px',
+                      color: '#F8FAFC',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="text-[10px] text-slate-400 text-center -mt-1 font-medium">
+                💡 Toca un sector para filtrar
+              </div>
+            </div>
 
-          <div className="text-[11px] text-slate-500 text-center mt-2 font-medium">
-            Ahorro reservado = 10% del ingreso mensual. El dinero libre disponible garantiza liquidez sin tocar tus ahorros.
+            {/* Right side: Legend */}
+            <div className="w-full lg:w-[52%] flex flex-col justify-start space-y-1.5 max-h-80 overflow-y-auto pr-2 border-t lg:border-t-0 lg:border-l border-slate-200 pt-4 lg:pt-0 lg:pl-6">
+              {pieData.map((cat, i) => {
+                const isSelected = selectedCategory === cat.name;
+                const percentage = totalExpensesInSelectedPeriod > 0
+                  ? ((cat.value / totalExpensesInSelectedPeriod) * 100).toFixed(1)
+                  : '0';
+
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedCategory((prev) => (prev === cat.name ? null : cat.name))}
+                    className={`w-full flex items-center justify-between text-left text-xs px-3 py-2 rounded-xs border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-900 text-white border-indigo-950 shadow-xs ring-2 ring-indigo-400 font-bold'
+                        : 'bg-white hover:bg-indigo-50/70 text-slate-700 border-slate-200 hover:border-indigo-300'
+                    }`}
+                    title={cat.name === 'Otros' && groupedOtrosCategories.length > 0 ? `Categorías agrupadas: ${groupedOtrosCategories.join(', ')}` : cat.name}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2 flex-1">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: cat.color }} />
+                      <span className="font-semibold text-xs leading-tight truncate" title={cat.name}>
+                        {cat.name}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2 font-mono text-[11px] ml-auto">
+                      <span className={isSelected ? 'text-amber-300 font-bold' : 'text-slate-900 font-bold'}>
+                        {monedaSimbolo} {cat.value.toFixed(2)}
+                      </span>
+                      <span className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
+                        ({percentage}%)
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {groupedOtrosCategories.length > 0 && (
+                <div className="text-[10px] text-slate-500 font-medium px-1 pt-1 italic">
+                  * 'Otros' agrupa {groupedOtrosCategories.length} categorías menores ({groupedOtrosCategories.slice(0, 3).join(', ')}{groupedOtrosCategories.length > 3 ? '...' : ''}).
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Category Expense Detail Breakdown Section */}

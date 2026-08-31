@@ -150,6 +150,21 @@ export function parseFallbackTransaction(
 
   const montoCuotaMensual = cuotas > 1 ? Number((montoTotal / cuotas).toFixed(2)) : montoTotal;
 
+  // Detect home equipment / repairs
+  const isHouseholdOrRepair =
+    promptLower.includes('mueble') ||
+    promptLower.includes('balanza') ||
+    promptLower.includes('lavadora') ||
+    promptLower.includes('reparaci') ||
+    promptLower.includes('arreglo') ||
+    promptLower.includes('gasfiter') ||
+    promptLower.includes('pintura') ||
+    promptLower.includes('electrodom') ||
+    promptLower.includes('olla') ||
+    promptLower.includes('sarten') ||
+    promptLower.includes('sartén') ||
+    promptLower.includes('ferreter');
+
   // Detect food/grocery items
   const isFoodOrGrocery =
     promptLower.includes('palta') ||
@@ -177,17 +192,21 @@ export function parseFallbackTransaction(
         categoria_principal: isIngreso
           ? 'Ingresos'
           : isGastoFijo
-          ? 'Servicios y Fijos'
+          ? 'Servicios y Gastos Fijos'
+          : isHouseholdOrRepair
+          ? 'Hogar y Mantenimiento'
           : isFoodOrGrocery
           ? 'Alimentación y Dieta'
-          : 'Variables',
+          : 'Ocio y Salidas',
         subcategoria: isIngreso
           ? 'Varios'
           : isGastoFijo
-          ? 'Gastos Fijos'
+          ? 'Servicios Fijos'
+          : isHouseholdOrRepair
+          ? 'Hogar y Equipamiento'
           : isFoodOrGrocery
           ? 'Víveres y Compras'
-          : 'Compras Varios',
+          : 'Compras y Salidas',
       },
     ],
     alerta_ahorro_comprometido: false,
@@ -287,12 +306,16 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
    - Detección de Entidad Financiera / Banco: Extrae el nombre del banco o tarjeta si se menciona (ej: "Interbank", "BCP", "BBVA", "Scotiabank", "Diners", "CMR", "Efectivo").
    - Si se menciona "tarjeta de crédito", "tarjeta credito", "cuota", "interbank", "bcp", "bbva", etc., DEBES clasificar 'metodo_pago' = 'CREDITO'.
 
-5. Clasificación Estricta de Gasto Fijo Recurrente vs Compra Ocasional/Puntual:
-   - Asigna es_gasto_fijo = true y frecuencia_recurrencia = "MENSUAL" ÚNICAMENTE a obligaciones contractuales o servicios periódicos obligatorios que vencen un día fijo todos los meses (ejemplos: Alquiler de vivienda, Mantenimiento mensual del edificio/condominio, Recibo de Luz, Recibo de Agua, Internet/Fibra, Plan celular mensual, Colegio/Pensiones universitarias, Suscripciones como Netflix/Spotify, Gimnasio mensual, Seguros).
-   - REGLA DE ORO - JAMÁS clasifiques como gasto fijo (DEBES asignar es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL") a:
-     * Combustible, Gasolina, Diésel, Grifo, Peajes, Lavado de auto o Aceite de motor.
-     * Reparaciones, Arreglos, Mantenimiento de artefactos/electrodomésticos (ej: reparación de lavadora, refrigeradora, cocina, televisor) o arreglos mecánicos/gasfitería/gasfitero.
-     * Comida, Frutas, Palta, Víveres, Restaurantes, Caprichos, Ropa, Electrónicos o Compras ocasionales.
+5. Clasificación Estricta de Categorías Principales y Gastos Fijos vs Variables:
+   - 'Servicios y Gastos Fijos' (es_gasto_fijo = true, frecuencia_recurrencia = "MENSUAL"): Exclusivo para servicios básicos y compromisos periódicos obligatorios que vencen mes a mes (Alquiler de vivienda, Mantenimiento de edificio/condominio, Recibo de Luz, Recibo de Agua, Internet/Fibra, Plan celular, Gas domiciliario cálidda/balón, Pensiones de estudio, Suscripciones fijas, Seguros).
+   - 'Hogar y Mantenimiento' (es_gasto_fijo = false, frecuencia_recurrencia = "PUNTUAL"): Compras de bienes y equipamiento del hogar (Muebles, Balanza, Electrodomésticos, Menaje, Ollas, Vajilla), Reparaciones del hogar (reparación de lavadora, refrigeradora, gasfitería, pintura, cerrajería), Ferretería y Herramientas, y Artículos para el hogar.
+   - 'Vehículo' (frecuencia_recurrencia = "PUNTUAL"): Combustible/Gasolina, cochera/estacionamiento, peajes, repuestos, lavado y mantenimiento del auto.
+   - 'Alimentación y Dieta': Compras de mercado, supermercado, víveres saludables y comida planificada.
+   - 'Gastos Hormiga y Antojos': Comida rápida, deliveries no planificados, antojos espontáneos, snacks, dulces, gaseosas, cerveza.
+   - 'Ocio y Salidas': Salidas a comer, cine, pasatiempos, viajes y entretenimiento.
+   - 'Crédito y Compromisos': Pago de tarjetas de crédito o cuotas de préstamos.
+
+   - REGLA DE ORO: Las compras de muebles, balanzas, electrodomésticos y reparaciones de artefactos/lavadora NUNCA son gastos fijos; pertenecen a 'Hogar y Mantenimiento' con es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL".
 
 6. Formato de Salida JSON Estricto:
    Debes devolver un objeto JSON válido con los campos exactos solicitados.
@@ -418,7 +441,7 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
       ],
     };
 
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    const modelsToTry = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     let responseText = '';
     let usedModel = '';
     let lastError: any = null;
@@ -443,7 +466,18 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`[Gemini API] Model '${modelName}' error: ${err?.message || err}`);
+        const errMsg = err?.message || String(err);
+        const isQuotaOrUnavailable =
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED') ||
+          errMsg.includes('503') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('quota');
+        if (isQuotaOrUnavailable) {
+          console.warn(`[Gemini API] Modelo '${modelName}' con límite de cuota o alta demanda temporal. Probando siguiente modelo...`);
+        } else {
+          console.warn(`[Gemini API] Modelo '${modelName}' error: ${errMsg}`);
+        }
       }
     }
 
@@ -460,8 +494,9 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
     }
 
     if (!parsedData) {
-      console.warn('Gemini API quota exceeded or unavailable. Using fallback heuristic parser.');
+      console.warn('Gemini API temporalmente no disponible o cuota alcanzada. Usando motor heurístico de respaldo.');
       parsedData = parseFallbackTransaction(textPrompt, inputMode, budgetInfo);
+      parsedData.fallbackReason = lastError?.message?.includes('429') ? 'quota_exceeded' : 'api_fallback';
     }
 
     return {

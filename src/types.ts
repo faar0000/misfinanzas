@@ -143,6 +143,20 @@ export const CATEGORIAS_BASE: CategoryDefinition[] = [
     ]
   },
   {
+    id: 'hogar_mantenimiento',
+    nombre: 'Hogar y Mantenimiento',
+    color: '#06B6D4', // Cyan
+    iconoNombre: 'Wrench',
+    subcategoriasBase: [
+      'Muebles y Equipamiento',
+      'Electrodomésticos y Balanza',
+      'Reparaciones y Arreglos del Hogar',
+      'Artículos para el hogar y Menaje',
+      'Ferretería y Herramientas',
+      'Decoración y Mejoras'
+    ]
+  },
+  {
     id: 'ocio_salidas',
     nombre: 'Ocio y Salidas',
     color: '#EC4899', // Pink

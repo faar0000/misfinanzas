@@ -57,7 +57,8 @@ const DEFAULT_CATEGORY_BUDGETS: Record<string, number> = {
   alimentacion: 500,
   gastos_hormiga: 100,
   vehiculo: 300,
-  servicios_fijos: 1200,
+  servicios_fijos: 1000,
+  hogar_mantenimiento: 200,
   ocio_salidas: 300,
   credito_compromisos: 500,
 };
@@ -1172,7 +1173,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
                       {/* AI Processing Engine Status Badge */}
                       {successNotification.processedBy === 'gemini_ai' ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-800 flex items-center gap-1">
-                          🤖 IA Gemini ({successNotification.modelUsed || 'gemini-3.6-flash'})
+                          🤖 IA Gemini ({successNotification.modelUsed || 'gemini-3.7-flash'})
                         </span>
                       ) : (
                         <button
@@ -1479,7 +1480,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
               {healthStatus && healthStatus.hasApiKey && (
                 <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-md p-3 mb-4 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span>¡Todo configurado correctamente! Vercel ejecutará <strong>Gemini AI (gemini-3.6-flash)</strong> para analizar texto, voz y OCR de boletas.</span>
+                  <span>¡Todo configurado correctamente! Vercel ejecutará <strong>Gemini AI (gemini-3.7-flash)</strong> para analizar texto, voz y OCR de boletas.</span>
                 </div>
               )}
 

@@ -22,6 +22,7 @@ import {
   Home,
   PartyPopper,
   CreditCard,
+  Wrench,
   Sparkles,
   ArrowRightLeft,
   ArrowRight,
@@ -67,6 +68,8 @@ const getCategoryIcon = (iconName: string) => {
       return <PartyPopper className="w-5 h-5" />;
     case 'CreditCard':
       return <CreditCard className="w-5 h-5" />;
+    case 'Wrench':
+      return <Wrench className="w-5 h-5" />;
     default:
       return <Target className="w-5 h-5" />;
   }
@@ -100,6 +103,8 @@ export const normalizeCategoryToId = (
       return 'gastos_hormiga';
     case 'Vehículo':
       return 'vehiculo';
+    case 'Hogar y Mantenimiento':
+      return 'hogar_mantenimiento';
     case 'Servicios y Gastos Fijos':
       return 'servicios_fijos';
     case 'Ocio y Salidas':
@@ -110,7 +115,8 @@ export const normalizeCategoryToId = (
       const cLower = (catName || '').toLowerCase();
       const sLower = (subcatName || '').toLowerCase();
       if (cLower.includes('vehic') || cLower.includes('auto') || sLower.includes('estacionamiento') || sLower.includes('cochera')) return 'vehiculo';
-      if (cLower.includes('servicio') || cLower.includes('fijo') || cLower.includes('hogar') || sLower.includes('limpieza') || sLower.includes('mantenimiento')) return 'servicios_fijos';
+      if (cLower.includes('mueble') || cLower.includes('balanza') || cLower.includes('reparaci') || sLower.includes('mueble') || sLower.includes('balanza') || sLower.includes('reparaci')) return 'hogar_mantenimiento';
+      if (cLower.includes('servicio') || cLower.includes('fijo') || cLower.includes('vivienda') || sLower.includes('alquiler') || sLower.includes('luz') || sLower.includes('agua')) return 'servicios_fijos';
       if (cLower.includes('ocio') || cLower.includes('salida')) return 'ocio_salidas';
       if (cLower.includes('credit') || cLower.includes('compromiso')) return 'credito_compromisos';
       if (cLower.includes('hormiga') || cLower.includes('antojo')) return 'gastos_hormiga';
@@ -952,7 +958,9 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                         Sin consumos registrados en este mes.
                       </p>
                     ) : (
-                      Object.entries(subcatsSpent).map(([subcat, amount]) => (
+                      Object.entries(subcatsSpent)
+                        .sort(([, amountA], [, amountB]) => amountB - amountA)
+                        .map(([subcat, amount]) => (
                         <div
                           key={subcat}
                           className="flex items-center justify-between text-xs py-1 px-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 rounded-xs"
