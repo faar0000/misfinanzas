@@ -17,8 +17,10 @@ import {
   CheckCircle2,
   SlidersHorizontal,
   Info,
+  Check,
 } from 'lucide-react';
 import { TransactionRecord } from '../types';
+import { normalizeDateToISO } from '../lib/financial';
 
 interface TransactionsListProps {
   transactions: TransactionRecord[];
@@ -31,7 +33,8 @@ interface TransactionsListProps {
 const formatDateGroupHeader = (dateStr: string): { title: string; relative?: string } => {
   if (!dateStr) return { title: 'Sin fecha' };
 
-  const parts = dateStr.split('-');
+  const normalized = normalizeDateToISO(dateStr);
+  const parts = normalized.split('-');
   if (parts.length !== 3) return { title: dateStr };
 
   const year = parseInt(parts[0], 10);
@@ -159,7 +162,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
   // Sort transactions by date descending (most recent to oldest)
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
-    const dateComparison = (b.fecha || '').localeCompare(a.fecha || '');
+    const dateA = normalizeDateToISO(a.fecha);
+    const dateB = normalizeDateToISO(b.fecha);
+    const dateComparison = dateB.localeCompare(dateA);
     if (dateComparison !== 0) {
       return dateComparison;
     }
@@ -169,7 +174,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   // Group transactions by date
   const groupedTransactions: { date: string; items: TransactionRecord[] }[] = [];
   sortedTransactions.forEach((tx) => {
-    const dateKey = tx.fecha || 'Sin fecha';
+    const dateKey = normalizeDateToISO(tx.fecha);
     const lastGroup = groupedTransactions[groupedTransactions.length - 1];
     if (lastGroup && lastGroup.date === dateKey) {
       lastGroup.items.push(tx);
@@ -187,31 +192,31 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
   return (
     <div className="bg-white border border-slate-200 shadow-sm rounded-sm flex flex-col mb-6 overflow-hidden">
-      <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-3.5 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xs font-bold uppercase tracking-widest text-slate-800">
             Historial de Operaciones
           </h2>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {filterType === 'ALL'
-              ? `${executedCount} movimientos ejecutados en banco • Ordenados cronológicamente`
+              ? `${executedCount} movimientos ejecutados • Orden cronológico`
               : filterType === 'PENDIENTE'
-              ? `${pendingCount} compromisos pendientes de pago programados`
+              ? `${pendingCount} compromisos pendientes de pago`
               : `${filteredTransactions.length} registros mostrados`}
           </p>
         </div>
 
         {/* Filters & Search */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {/* Search bar */}
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-initial sm:w-48">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar..."
-              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 text-xs text-slate-800 rounded-sm outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 text-xs text-slate-800 rounded-sm outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -219,14 +224,14 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-sm outline-none font-medium cursor-pointer"
+            className="flex-1 sm:flex-initial px-2 py-1.5 bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-sm outline-none font-medium cursor-pointer"
           >
-            <option value="ALL">Movimientos Ejecutados en Banco ({executedCount})</option>
-            <option value="GASTO">Solo Gastos Ejecutados</option>
-            <option value="INGRESO">Solo Ingresos Ejecutados</option>
-            <option value="GASTO_FIJO">📌 Gastos Fijos (Pagados)</option>
-            <option value="GASTO_PUNTUAL">🛒 Compras Únicas (Pagadas)</option>
-            <option value="PENDIENTE">⏳ Compromisos Pendientes ({pendingCount})</option>
+            <option value="ALL">Ejecutados ({executedCount})</option>
+            <option value="GASTO">Gastos</option>
+            <option value="INGRESO">Ingresos</option>
+            <option value="GASTO_FIJO">Gastos Fijos</option>
+            <option value="GASTO_PUNTUAL">Compras Únicas</option>
+            <option value="PENDIENTE">Pendientes ({pendingCount})</option>
             <option value="TODOS">Todos ({transactions.length})</option>
           </select>
         </div>
@@ -245,13 +250,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             return (
               <div key={group.date} className="bg-white">
                 {/* Encabezado de Fecha del Grupo */}
-                <div className="px-6 py-2.5 bg-slate-50/95 border-y border-slate-200/80 flex items-center justify-between sticky top-0 z-10">
-                  <div className="flex items-center gap-2">
+                <div className="px-3.5 sm:px-5 py-1.5 sm:py-2 bg-slate-50/95 border-y border-slate-200/80 flex items-center justify-between sticky top-0 z-10">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                     <span className="text-xs font-bold text-slate-800 tracking-tight">{title}</span>
                     {relative && (
                       <span
-                        className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                        className={`text-[9px] sm:text-[10px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
                           relative === 'Hoy'
                             ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
                             : 'bg-slate-200 text-slate-700'
@@ -261,7 +266,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       </span>
                     )}
                     <span className="text-[10px] text-slate-400 font-medium ml-1">
-                      ({group.items.length} {group.items.length === 1 ? 'operación' : 'operaciones'})
+                      ({group.items.length})
                     </span>
                   </div>
                 </div>
@@ -271,374 +276,350 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   {group.items.map((tx) => {
                     const isExpanded = expandedId === tx.id;
                     const mainCategory = tx.items[0]?.categoria_principal || 'General';
+                    const mainSubcategory = tx.items[0]?.subcategoria || '';
 
-            return (
-              <div
-                key={tx.id}
-                className={`transition-colors ${
-                  tx.alerta_ahorro_comprometido ? 'bg-rose-50/30' : 'hover:bg-slate-50'
-                }`}
-              >
-                <div
-                  onClick={() => toggleExpand(tx.id)}
-                  className="px-6 py-4 flex items-center justify-between cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-sm flex items-center justify-center shrink-0 font-bold text-xs ${
-                        tx.tipo_operacion === 'INGRESO'
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                          : tx.metodo_pago === 'CREDITO'
-                          ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200'
-                      }`}
-                    >
-                      {tx.tipo_operacion === 'INGRESO' ? (
-                        <ArrowDownLeft className="w-4 h-4" />
-                      ) : tx.metodo_pago === 'CREDITO' ? (
-                        <CreditCard className="w-4 h-4" />
-                      ) : (
-                        <ArrowUpRight className="w-4 h-4" />
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-sm text-slate-900">
-                          {getDisplayTitle(tx)}
-                        </span>
-
-                        {tx.comercio && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-sm border border-emerald-200">
-                            <Store className="w-3 h-3 text-emerald-600" />
-                            {tx.comercio}
-                          </span>
-                        )}
-
-                        {/* Interactive Payment Method / Credit Card Button */}
-                        {tx.tipo_operacion === 'GASTO' && (
-                          tx.metodo_pago === 'CREDITO' || (tx.entidad_financiera && tx.metodo_pago !== 'DEBITO' && tx.metodo_pago !== 'EFECTIVO') ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTransaction?.(tx.id, {
-                                  metodo_pago: 'DEBITO',
-                                  cuotas: 1,
-                                  cuota_actual: 1,
-                                  cuotas_restantes: 0,
-                                  monto_cuota_mensual: tx.monto_total,
-                                  entidad_financiera: tx.entidad_financiera === 'Tarjeta de Crédito' ? undefined : tx.entidad_financiera,
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-sm border border-indigo-200 transition-colors cursor-pointer"
-                              title="Tarjeta de Crédito (clic para cambiar a Débito)"
-                            >
-                              <CreditCard className="w-3 h-3 text-indigo-600" />
-                              <span>{tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito' ? `Crédito (${tx.entidad_financiera})` : 'Crédito'}</span>
-                            </button>
-                          ) : tx.metodo_pago === 'DEBITO' ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTransaction?.(tx.id, {
-                                  metodo_pago: 'EFECTIVO',
-                                  cuotas: 1,
-                                  cuota_actual: 1,
-                                  cuotas_restantes: 0,
-                                  monto_cuota_mensual: tx.monto_total,
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[10px] font-bold rounded-sm border border-blue-200 transition-colors cursor-pointer"
-                              title="Tarjeta de Débito (clic para cambiar a Efectivo)"
-                            >
-                              <CreditCard className="w-3 h-3 text-blue-600" />
-                              <span>{tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito' ? `Débito (${tx.entidad_financiera})` : 'Débito'}</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTransaction?.(tx.id, {
-                                  metodo_pago: 'CREDITO',
-                                  entidad_financiera: tx.entidad_financiera || 'Tarjeta de Crédito',
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-sm border border-slate-300 transition-colors cursor-pointer"
-                              title="Efectivo (clic para cambiar a Crédito)"
-                            >
-                              <Banknote className="w-3 h-3 text-slate-500" />
-                              <span>Efectivo</span>
-                            </button>
-                          )
-                        )}
-
-                        {tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateTransaction?.(tx.id, {
-                                estado_pago: 'PAGADO',
-                              });
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 hover:bg-amber-200 text-[10px] font-bold rounded-sm border border-amber-300 transition-colors cursor-pointer"
-                            title="Haz clic para marcar como Pagado hoy (descuenta del banco)"
-                          >
-                            <Clock className="w-3 h-3 text-amber-700" />
-                            Pendiente (Día {tx.dia_pago_mensual || 21}) — Marcar Pagado
-                          </button>
-                        )}
-
-                        {tx.tipo_operacion === 'GASTO' && (
-                          tx.es_gasto_fijo ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTransaction?.(tx.id, {
-                                  es_gasto_fijo: false,
-                                  frecuencia_recurrencia: 'PUNTUAL',
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 hover:bg-purple-200 text-[10px] font-bold rounded-sm border border-purple-300 transition-colors cursor-pointer"
-                              title="Haz clic para cambiar a Compra Única"
-                            >
-                              <RotateCw className="w-3 h-3 text-purple-600" />
-                              Gasto Fijo Mensual
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onUpdateTransaction?.(tx.id, {
-                                  es_gasto_fijo: true,
-                                  frecuencia_recurrencia: 'MENSUAL',
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 hover:bg-slate-200 text-[10px] font-bold rounded-sm border border-slate-200 transition-colors cursor-pointer"
-                              title="Haz clic para cambiar a Gasto Fijo Mensual"
-                            >
-                              <ShoppingBag className="w-3 h-3 text-slate-400" />
-                              Compra Única
-                            </button>
-                          )
-                        )}
-
-                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded-sm border border-slate-200">
-                          {mainCategory}
-                        </span>
-
-                        {(tx.cuotas > 1 || (tx.cuota_actual && tx.cuota_actual > 1)) && (
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold uppercase rounded-sm border border-indigo-200">
-                            Cuota {tx.cuota_actual || 1}/{tx.cuotas}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      {tx.metodo_pago === 'CREDITO' && tx.cuotas > 1 ? (
-                        <>
-                          <div className="font-mono font-bold text-sm md:text-base text-indigo-700">
-                            - {monedaSimbolo} {tx.monto_cuota_mensual.toFixed(2)} / mes
-                          </div>
-                          <div className="text-[10px] font-mono font-semibold text-slate-400">
-                            Total: {monedaSimbolo} {tx.monto_total.toFixed(2)} ({tx.cuotas} cuotas)
-                          </div>
-                        </>
-                      ) : (
+                    return (
+                      <div
+                        key={tx.id}
+                        className={`transition-colors ${
+                          tx.alerta_ahorro_comprometido ? 'bg-rose-50/30' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        {/* Compact Transaction Row */}
                         <div
-                          className={`font-mono font-bold text-sm md:text-base ${
-                            tx.tipo_operacion === 'INGRESO'
-                              ? 'text-emerald-600'
-                              : 'text-slate-900'
-                          }`}
+                          onClick={() => toggleExpand(tx.id)}
+                          className="px-3 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between cursor-pointer gap-2.5"
                         >
-                          {tx.tipo_operacion === 'INGRESO' ? '+' : '-'} {monedaSimbolo}{' '}
-                          {tx.monto_total.toFixed(2)}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteTransaction(tx.id);
-                      }}
-                      className="p-1.5 text-slate-300 hover:text-rose-600 rounded-sm hover:bg-rose-50 transition-colors"
-                      title="Eliminar"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-
-                    {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-slate-400" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Expanded Details Panel */}
-                {isExpanded && (
-                  <div className="p-4 border-t border-slate-200 bg-slate-50 text-xs space-y-3.5">
-                    {/* 1. Origen / Nota del Registro */}
-                    {tx.mensaje_usuario && (
-                      <div className="p-3 bg-white border border-slate-200 rounded-md shadow-2xs flex items-start gap-2.5">
-                        <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block">
-                            Origen / Nota del Registro:
-                          </span>
-                          <p className="text-slate-800 font-medium italic mt-0.5 text-xs">
-                            "{tx.mensaje_usuario}"
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 2. Panel de Edición Rápida */}
-                    {onUpdateTransaction && (
-                      <div className="p-3.5 bg-white border border-slate-200 rounded-md shadow-2xs space-y-2.5">
-                        <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
-                          <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Edición y Ajustes de Registro</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                          {/* Campo Fecha */}
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-indigo-600" />
-                              Fecha:
-                            </label>
-                            <input
-                              type="date"
-                              value={tx.fecha}
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  onUpdateTransaction(tx.id, { fecha: e.target.value });
-                                }
-                              }}
-                              className="w-full bg-slate-50 focus:bg-white text-slate-900 font-bold border border-slate-300 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-                            />
-                          </div>
-
-                          {/* Campo Método de Pago */}
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                              <CreditCard className="w-3 h-3 text-indigo-600" />
-                              Método de Pago:
-                            </label>
-                            <select
-                              value={tx.metodo_pago}
-                              onChange={(e) => {
-                                const newMethod = e.target.value as 'CREDITO' | 'DEBITO' | 'EFECTIVO';
-                                onUpdateTransaction(tx.id, {
-                                  metodo_pago: newMethod,
-                                  cuotas: newMethod === 'CREDITO' ? tx.cuotas : 1,
-                                  cuota_actual: newMethod === 'CREDITO' ? tx.cuota_actual : 1,
-                                  cuotas_restantes: newMethod === 'CREDITO' ? tx.cuotas_restantes : 0,
-                                  monto_cuota_mensual: newMethod === 'CREDITO' ? tx.monto_cuota_mensual : tx.monto_total,
-                                  entidad_financiera: newMethod === 'CREDITO' ? (tx.entidad_financiera || 'Tarjeta de Crédito') : (tx.entidad_financiera === 'Tarjeta de Crédito' ? undefined : tx.entidad_financiera),
-                                });
-                              }}
-                              className="w-full bg-slate-50 focus:bg-white text-slate-900 font-bold border border-slate-300 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                          {/* Left: Icon + Title & Metadata */}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-sm flex items-center justify-center shrink-0 font-bold text-xs ${
+                                tx.tipo_operacion === 'INGRESO'
+                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                                  : tx.metodo_pago === 'CREDITO'
+                                  ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              }`}
                             >
-                              <option value="DEBITO">💳 Tarjeta de Débito</option>
-                              <option value="CREDITO">💳 Tarjeta de Crédito</option>
-                              <option value="EFECTIVO">💵 Efectivo / Cash</option>
-                            </select>
-                          </div>
-
-                          {/* Campo Banco / Entidad */}
-                          <div>
-                            <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                              Banco / Entidad:
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Ej: BCP, BBVA, Interbank..."
-                              value={tx.entidad_financiera || ''}
-                              onChange={(e) => {
-                                onUpdateTransaction(tx.id, { entidad_financiera: e.target.value || undefined });
-                              }}
-                              className="w-full bg-slate-50 focus:bg-white text-slate-900 font-bold border border-slate-300 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
-                            />
-                          </div>
-
-                          {/* Campo Estado */}
-                          {tx.tipo_operacion === 'GASTO' ? (
-                            <div>
-                              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-indigo-600" />
-                                Estado:
-                              </label>
-                              <select
-                                value={tx.estado_pago || 'PAGADO'}
-                                onChange={(e) => {
-                                  const newStatus = e.target.value as 'PAGADO' | 'PENDIENTE';
-                                  onUpdateTransaction(tx.id, {
-                                    estado_pago: newStatus,
-                                    dia_pago_mensual: newStatus === 'PENDIENTE' ? (tx.dia_pago_mensual || 21) : undefined,
-                                  });
-                                }}
-                                className="w-full bg-slate-50 focus:bg-white text-slate-900 font-bold border border-slate-300 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
-                              >
-                                <option value="PAGADO">✅ Pagado / Ejecutado</option>
-                                <option value="PENDIENTE">⏳ Pendiente de Pago</option>
-                              </select>
+                              {tx.tipo_operacion === 'INGRESO' ? (
+                                <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              ) : tx.metodo_pago === 'CREDITO' ? (
+                                <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              ) : (
+                                <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              )}
                             </div>
-                          ) : (
-                            <div>
-                              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                                Tipo:
-                              </label>
-                              <div className="px-2.5 py-1.5 bg-emerald-50 text-emerald-800 font-bold rounded-md border border-emerald-200 text-xs">
-                                + Ingreso
+
+                            <div className="min-w-0 flex-1">
+                              {/* Title */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                                  {getDisplayTitle(tx)}
+                                </span>
+                              </div>
+
+                              {/* Compact Meta Tags Row */}
+                              <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap mt-0.5">
+                                {tx.comercio ? (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-emerald-50 text-emerald-700 text-[9px] sm:text-[10px] font-semibold rounded-xs border border-emerald-200 truncate max-w-[120px]">
+                                    <Store className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                    <span className="truncate">{tx.comercio}</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 text-[9px] sm:text-[10px] font-medium rounded-xs border border-slate-200 truncate max-w-[120px]">
+                                    {mainSubcategory && mainSubcategory !== 'General' ? mainSubcategory : mainCategory}
+                                  </span>
+                                )}
+
+                                {/* Payment Method Tag */}
+                                <span
+                                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9px] sm:text-[10px] font-medium rounded-xs border ${
+                                    tx.metodo_pago === 'CREDITO'
+                                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                      : tx.metodo_pago === 'DEBITO'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {tx.metodo_pago === 'CREDITO'
+                                    ? tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Crédito'
+                                      ? `Crédito (${tx.entidad_financiera})`
+                                      : 'Crédito'
+                                    : tx.metodo_pago === 'DEBITO'
+                                    ? tx.entidad_financiera && tx.entidad_financiera !== 'Tarjeta de Débito'
+                                      ? `Débito (${tx.entidad_financiera})`
+                                      : 'Débito'
+                                    : 'Efectivo'}
+                                </span>
+
+                                {/* Recurring / Fixed indicator */}
+                                {tx.es_gasto_fijo && (
+                                  <span className="px-1 py-0.2 bg-purple-50 text-purple-700 text-[9px] font-bold rounded-xs border border-purple-200">
+                                    Fijo
+                                  </span>
+                                )}
+
+                                {/* Pending indicator */}
+                                {tx.estado_pago === 'PENDIENTE' && (
+                                  <span className="px-1 py-0.2 bg-amber-50 text-amber-800 text-[9px] font-bold rounded-xs border border-amber-300">
+                                    Pendiente
+                                  </span>
+                                )}
+
+                                {/* Installments info */}
+                                {tx.cuotas > 1 && (
+                                  <span className="px-1 py-0.2 bg-indigo-50 text-indigo-800 text-[9px] font-bold rounded-xs border border-indigo-200">
+                                    {tx.cuota_actual || 1}/{tx.cuotas}c
+                                  </span>
+                                )}
                               </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 3. Ítems Desglosados */}
-                    <div className="p-3.5 bg-white border border-slate-200 rounded-md shadow-2xs">
-                      <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[11px] mb-2 flex items-center gap-1.5 pb-1.5 border-b border-slate-100">
-                        <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Ítems Desglosados ({tx.items.length})</span>
-                      </h4>
-                      <div className="space-y-1.5">
-                        {tx.items.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100/80 transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
-                              <span className="font-semibold text-slate-900">
-                                {item.concepto}
-                              </span>
-                              <span className="text-[10px] font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                                {item.categoria_principal} › {item.subcategoria}
-                              </span>
-                            </div>
-                            <span className="font-mono font-bold text-slate-900">
-                              {monedaSimbolo} {item.monto.toFixed(2)}
-                            </span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+
+                          {/* Right: Amount & Expand Arrow */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              {tx.metodo_pago === 'CREDITO' && tx.cuotas > 1 ? (
+                                <>
+                                  <div className="font-mono font-bold text-xs sm:text-sm text-indigo-700 whitespace-nowrap">
+                                    - {monedaSimbolo} {tx.monto_cuota_mensual.toFixed(2)}
+                                  </div>
+                                  <div className="text-[9px] font-mono text-slate-400 whitespace-nowrap">
+                                    {tx.cuotas} cuotas
+                                  </div>
+                                </>
+                              ) : (
+                                <div
+                                  className={`font-mono font-bold text-xs sm:text-sm whitespace-nowrap ${
+                                    tx.tipo_operacion === 'INGRESO'
+                                      ? 'text-emerald-600'
+                                      : 'text-slate-900'
+                                  }`}
+                                >
+                                  {tx.tipo_operacion === 'INGRESO' ? '+' : '-'} {monedaSimbolo}{' '}
+                                  {tx.monto_total.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="text-slate-400 p-0.5">
+                              {isExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Details Panel */}
+                        {isExpanded && (
+                          <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 text-xs space-y-3">
+                            {/* Quick Action Badges Bar */}
+                            <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                              {/* Payment Switch Button */}
+                              {tx.tipo_operacion === 'GASTO' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const nextMetodo = tx.metodo_pago === 'EFECTIVO' ? 'DEBITO' : tx.metodo_pago === 'DEBITO' ? 'CREDITO' : 'EFECTIVO';
+                                    onUpdateTransaction?.(tx.id, {
+                                      metodo_pago: nextMetodo,
+                                      cuotas: 1,
+                                      cuota_actual: 1,
+                                      cuotas_restantes: 0,
+                                      monto_cuota_mensual: tx.monto_total,
+                                      entidad_financiera: nextMetodo === 'CREDITO' ? (tx.entidad_financiera || 'Tarjeta de Crédito') : undefined,
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-xs border border-slate-200 transition-colors cursor-pointer"
+                                  title="Cambiar método de pago"
+                                >
+                                  <CreditCard className="w-3 h-3 text-indigo-600" />
+                                  <span>Método: {tx.metodo_pago}</span>
+                                </button>
+                              )}
+
+                              {/* Gasto Fijo / Puntual Switch */}
+                              {tx.tipo_operacion === 'GASTO' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateTransaction?.(tx.id, {
+                                      es_gasto_fijo: !tx.es_gasto_fijo,
+                                      frecuencia_recurrencia: tx.es_gasto_fijo ? 'PUNTUAL' : 'MENSUAL',
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-xs border border-slate-200 transition-colors cursor-pointer"
+                                >
+                                  <RotateCw className="w-3 h-3 text-purple-600" />
+                                  <span>{tx.es_gasto_fijo ? 'Gasto Fijo Mensual' : 'Compra Única'}</span>
+                                </button>
+                              )}
+
+                              {/* Mark as Pagado if Pending */}
+                              {tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateTransaction?.(tx.id, {
+                                      estado_pago: 'PAGADO',
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-xs border border-emerald-300 transition-colors cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  <span>Marcar como Pagado</span>
+                                </button>
+                              )}
+
+                              {/* Delete Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteTransaction(tx.id);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold rounded-xs border border-rose-200 transition-colors cursor-pointer ml-auto"
+                              >
+                                <Trash2 className="w-3 h-3 text-rose-600" />
+                                <span>Eliminar</span>
+                              </button>
+                            </div>
+
+                            {/* 1. Origen / Nota del Registro */}
+                            {tx.mensaje_usuario && (
+                              <div className="p-2.5 bg-white border border-slate-200 rounded-xs flex items-start gap-2">
+                                <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                                <div>
+                                  <span className="font-bold text-[9px] text-slate-400 uppercase tracking-wider block">
+                                    Nota original registrada:
+                                  </span>
+                                  <p className="text-slate-800 font-medium italic mt-0.5 text-xs">
+                                    "{tx.mensaje_usuario}"
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 2. Panel de Edición Rápida */}
+                            {onUpdateTransaction && (
+                              <div className="p-3 bg-white border border-slate-200 rounded-xs space-y-2.5">
+                                <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 pb-1.5 border-b border-slate-100">
+                                  <SlidersHorizontal className="w-3 h-3 text-indigo-600" />
+                                  <span>Edición Rápida</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                                  {/* Campo Fecha */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Fecha
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={tx.fecha}
+                                      onChange={(e) => {
+                                        onUpdateTransaction(tx.id, { fecha: e.target.value });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs font-mono font-medium text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
+
+                                  {/* Campo Monto Total */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Monto Total ({monedaSimbolo})
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={tx.monto_total}
+                                      onChange={(e) => {
+                                        const newMonto = parseFloat(e.target.value) || 0;
+                                        const newCuotas = tx.cuotas || 1;
+                                        const updatedItems = tx.items.map((it, idx) => {
+                                          if (idx === 0) {
+                                            return { ...it, monto: newMonto };
+                                          }
+                                          return it;
+                                        });
+                                        onUpdateTransaction(tx.id, {
+                                          monto_total: newMonto,
+                                          monto_cuota_mensual: newCuotas > 0 ? newMonto / newCuotas : newMonto,
+                                          items: updatedItems,
+                                        });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs font-mono font-bold text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
+
+                                  {/* Campo Comercio / Tienda */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Comercio / Tienda
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={tx.comercio || ''}
+                                      placeholder="Ej. Metro, Tottus, Bembos..."
+                                      onChange={(e) => {
+                                        onUpdateTransaction(tx.id, { comercio: e.target.value });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
+
+                                  {/* Campo Banco / Entidad */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Banco / Entidad
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={tx.entidad_financiera || ''}
+                                      placeholder="Ej. BCP, BBVA, Interbank"
+                                      onChange={(e) => {
+                                        onUpdateTransaction(tx.id, { entidad_financiera: e.target.value || undefined });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 3. Ítems Desglosados */}
+                            <div className="p-2.5 bg-white border border-slate-200 rounded-xs space-y-1.5">
+                              <span className="font-bold text-[10px] text-slate-700 uppercase tracking-wider block">
+                                Ítems Desglosados ({tx.items.length})
+                              </span>
+                              <div className="space-y-1">
+                                {tx.items.map((item, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between p-1.5 bg-slate-50 border border-slate-100 rounded-xs text-xs"
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <span className="font-semibold text-slate-900 block truncate">
+                                        {item.concepto}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400">
+                                        {item.categoria_principal} › {item.subcategoria}
+                                      </span>
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-900 shrink-0">
+                                      {monedaSimbolo} {item.monto.toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

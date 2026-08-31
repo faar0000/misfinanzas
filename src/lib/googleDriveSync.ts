@@ -1,4 +1,5 @@
 import { TransactionRecord, BudgetSummary, BudgetConfig } from '../types';
+import { normalizeDateToISO } from './financial';
 
 export interface GoogleDriveSyncResult {
   spreadsheetId: string;
@@ -129,107 +130,178 @@ async function ensureBackupSheetExists(accessToken: string, spreadsheetId: strin
 }
 
 /**
+ * Helper to clean and parse currency strings like "S/. 107.34", "$10.00", "107,34", etc.
+ */
+export const parseCleanAmount = (val: any): number => {
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  if (!val) return 0;
+  let str = String(val).trim();
+  // Strip currency prefixes like "S/.", "S/", "$", "€", "USD", "PEN"
+  str = str.replace(/^(S\/\.?|\$|€|USD|PEN)\s*/i, '');
+  // If comma is used as thousand separator (e.g. 1,234.56), remove it
+  if (str.includes(',') && str.includes('.')) {
+    str = str.replace(/,/g, '');
+  } else if (str.includes(',') && !str.includes('.')) {
+    // If comma is used as decimal separator (e.g. 107,34)
+    str = str.replace(',', '.');
+  }
+  const match = str.match(/-?\d+(?:\.\d+)?/);
+  return match ? parseFloat(match[0]) : 0;
+};
+
+/**
  * Reads existing transactions and state from Google Sheets.
- * Attempts to read lossless _DataBackup JSON first, and falls back to parsing rows from 'Transacciones'.
+ * Reads the visible 'Transacciones' sheet to capture all direct entries/modifications
+ * and merges them with lossless metadata from '_DataBackup'.
  */
 export async function readDataFromGoogleSheets(
   accessToken: string,
   spreadsheetId: string
 ): Promise<ImportedDriveData | null> {
-  // 1. Try reading _DataBackup tab
+  let backupParsed: any = null;
+
+  // 1. Read _DataBackup tab if available for rich config/budgets metadata
   try {
-    const backupUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/_DataBackup!A1`;
-    const backupRes = await fetch(backupUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const backupRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/_DataBackup!A1`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
     if (backupRes.ok) {
       const backupData = await backupRes.json();
       const rawJson = backupData.values?.[0]?.[0];
       if (rawJson) {
-        const parsed = JSON.parse(rawJson);
-        if (parsed.transactions && Array.isArray(parsed.transactions) && parsed.transactions.length > 0) {
-          return {
-            transactions: parsed.transactions,
-            config: parsed.config,
-            categoryBudgets: parsed.categoryBudgets,
-          };
-        }
+        backupParsed = JSON.parse(rawJson);
       }
     }
   } catch (err) {
-    console.warn('No se pudo leer _DataBackup tab, intentando parsear filas de Transacciones:', err);
+    console.warn('No se pudo leer _DataBackup tab:', err);
   }
 
-  // 2. Fallback: Parse rows from 'Transacciones' sheet
+  // 2. Read all rows from the primary visible 'Transacciones' sheet (A2 to K1000)
+  let sheetTransactions: TransactionRecord[] = [];
   try {
     const txUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A2:Z1000`;
     const txRes = await fetch(txUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!txRes.ok) return null;
 
-    const data = await txRes.json();
-    const rows: string[][] = data.values || [];
-    if (rows.length === 0) return null;
+    if (txRes.ok) {
+      const data = await txRes.json();
+      const rows: string[][] = data.values || [];
 
-    const transactions: TransactionRecord[] = rows
-      .filter((row) => row && row.length >= 4 && row[0])
-      .map((row) => {
-        const id = row[0] || `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        const fecha = row[1] || new Date().toISOString().substring(0, 10);
-        const tipo_operacion = (row[2] || '').toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
-        const monto_total = parseFloat((row[3] || '0').replace(/[^0-9.-]/g, '')) || 0;
-        const rawMetodo = (row[4] || 'EFECTIVO').toUpperCase().trim();
-        const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
-          rawMetodo.includes('CREDITO') ? 'CREDITO' :
-          rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
+      sheetTransactions = rows
+        .filter((row) => row && row.length >= 3 && row[0] && row[0].trim() !== '')
+        .map((row) => {
+          const id = row[0].trim();
+          const fecha = normalizeDateToISO(row[1]);
+          const tipo_operacion = (row[2] || '').toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
+          const monto_total = parseCleanAmount(row[3]);
+          const rawMetodo = (row[4] || 'EFECTIVO').toUpperCase().trim();
+          const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
+            rawMetodo.includes('CREDITO') ? 'CREDITO' :
+            rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
 
-        const cuotas = parseInt(row[5] || '1', 10) || 1;
-        const monto_cuota_mensual = parseFloat((row[6] || '0').replace(/[^0-9.-]/g, '')) || (cuotas > 0 ? monto_total / cuotas : monto_total);
-        const alerta_ahorro_comprometido = (row[7] || '').toUpperCase().includes('SÍ') || (row[7] || '').toUpperCase().includes('SI');
-        const dinero_libre_restante = parseFloat((row[8] || '0').replace(/[^0-9.-]/g, '')) || 0;
-        const detailStr = row[9] || '';
-        const mensaje_usuario = row[10] || 'Transacción recuperada de Google Drive.';
+          const cuotas = parseInt(row[5] || '1', 10) || 1;
+          const monto_cuota_mensual = parseCleanAmount(row[6]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
+          const alerta_ahorro_comprometido = (row[7] || '').toUpperCase().includes('SÍ') || (row[7] || '').toUpperCase().includes('SI');
+          const dinero_libre_restante = parseCleanAmount(row[8]);
+          const detailStr = row[9] || '';
+          const mensaje_usuario = row[10] || 'Transacción sincronizada desde Google Sheets.';
 
-        // Parse items from detail string
-        let items = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
-        if (detailStr && detailStr.includes(' | ')) {
-          const splitParts = detailStr.split(' | ');
-          items = splitParts.map((p) => {
-            const match = p.match(/^(.*?)\s*\((.*?):\s*S\/\.\s*([\d.]+)\)$/);
-            if (match) {
-              return {
-                concepto: match[1].trim() || 'Ítem',
-                categoria_principal: match[2].trim() || 'Alimentación y Dieta',
+          // Parse items from detail string
+          let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
+          if (detailStr && detailStr.includes(' | ')) {
+            const splitParts = detailStr.split(' | ');
+            items = splitParts.map((p) => {
+              const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+              if (match) {
+                return {
+                  concepto: match[1].trim() || 'Ítem',
+                  categoria_principal: match[2].trim() || 'Alimentación y Dieta',
+                  subcategoria: 'General',
+                  monto: parseCleanAmount(match[3]) || (monto_total / splitParts.length),
+                };
+              }
+              return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
+            });
+          } else if (detailStr) {
+            const matchSingle = detailStr.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+            if (matchSingle) {
+              items = [{
+                concepto: matchSingle[1].trim() || 'Ítem',
+                categoria_principal: matchSingle[2].trim() || 'Alimentación y Dieta',
                 subcategoria: 'General',
-                monto: parseFloat(match[3]) || 0,
-              };
+                monto: parseCleanAmount(matchSingle[3]) || monto_total,
+              }];
             }
-            return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
-          });
-        }
+          }
 
-        return {
-          id,
-          fecha,
-          tipo_operacion,
-          monto_total,
-          metodo_pago,
-          cuotas,
-          monto_cuota_mensual,
-          alerta_ahorro_comprometido,
-          dinero_libre_restante,
-          items,
-          mensaje_usuario,
-          frecuencia_recurrencia: 'PUNTUAL',
-        };
-      });
-
-    return transactions.length > 0 ? { transactions } : null;
-  } catch (err) {
-    console.error('Error al parsear transacciones de Google Sheets:', err);
-    return null;
+          return {
+            id,
+            fecha,
+            tipo_operacion,
+            monto_total,
+            metodo_pago,
+            cuotas,
+            monto_cuota_mensual,
+            alerta_ahorro_comprometido,
+            dinero_libre_restante,
+            items,
+            mensaje_usuario,
+            frecuencia_recurrencia: 'PUNTUAL',
+          };
+        });
+    }
+  } catch (sheetErr) {
+    console.error('Error al leer pestaña Transacciones:', sheetErr);
   }
+
+  // 3. Merge: if we have backup transactions, enrich or merge missing ones
+  const backupList: TransactionRecord[] = (backupParsed?.transactions && Array.isArray(backupParsed.transactions))
+    ? backupParsed.transactions.map((t: any) => ({ ...t, fecha: normalizeDateToISO(t.fecha) }))
+    : [];
+
+  const finalTransactionsMap = new Map<string, TransactionRecord>();
+
+  // Prioritize the full metadata from backup first
+  backupList.forEach((tx) => {
+    if (tx && tx.id) {
+      finalTransactionsMap.set(tx.id, tx);
+    }
+  });
+
+  // Then add or update with all rows physically present in the Google Sheet
+  sheetTransactions.forEach((sheetTx) => {
+    if (!sheetTx.id) return;
+    const existing = finalTransactionsMap.get(sheetTx.id);
+    if (existing) {
+      // Retain full items structure if available, but update essential fields from sheet
+      finalTransactionsMap.set(sheetTx.id, {
+        ...existing,
+        fecha: sheetTx.fecha,
+        monto_total: sheetTx.monto_total,
+        tipo_operacion: sheetTx.tipo_operacion,
+        metodo_pago: sheetTx.metodo_pago,
+        cuotas: sheetTx.cuotas,
+        monto_cuota_mensual: sheetTx.monto_cuota_mensual,
+      });
+    } else {
+      // New row added in Google Sheet!
+      finalTransactionsMap.set(sheetTx.id, sheetTx);
+    }
+  });
+
+  const mergedTransactions = Array.from(finalTransactionsMap.values());
+
+  if (mergedTransactions.length > 0) {
+    return {
+      transactions: mergedTransactions,
+      config: backupParsed?.config,
+      categoryBudgets: backupParsed?.categoryBudgets,
+    };
+  }
+
+  return null;
 }
 
 /**

@@ -281,24 +281,24 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
   const metaAhorro = ingresoMensual * 0.1;
 
   return (
-    <div className="space-y-6 mb-6">
+    <div className="space-y-4 sm:space-y-6 mb-6">
       {/* 1. GASTOS FIJOS RECURRENTES IDENTIFICADOS CARD */}
-      <div className="bg-white border border-purple-200 rounded-sm shadow-xs p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-purple-100 mb-5 gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-700 rounded-sm flex items-center justify-center text-white shrink-0">
-              <Repeat className="w-4 h-4" />
+      <div className="bg-white border border-purple-200 rounded-sm shadow-xs p-3.5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 sm:pb-4 border-b border-purple-100 mb-3.5 sm:mb-5 gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-purple-700 rounded-sm flex items-center justify-center text-white shrink-0">
+              <Repeat className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-800">
-                  Gastos Fijos Recurrentes Identificados
+                  Gastos Fijos Recurrentes
                 </h2>
                 <button
                   type="button"
                   onClick={() => setShowCriteriaInfo(!showCriteriaInfo)}
                   title={showCriteriaInfo ? "Ocultar criterios" : "Ver criterios de análisis de gastos fijos"}
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
+                  className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
                     showCriteriaInfo
                       ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-300'
                       : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
@@ -307,17 +307,17 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                   ?
                 </button>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Gastos fijos que se realizan todos los meses (Alquiler, Servicios, Mantenimiento, Suscripciones)
+              <p className="text-[10px] sm:text-[11px] text-slate-500">
+                Alquiler, Servicios, Mantenimiento, Suscripciones
               </p>
             </div>
           </div>
 
-          <div className="bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-sm text-right">
-            <span className="text-[10px] text-purple-700 font-bold uppercase block">
-              Total Gastos Fijos Mensuales
+          <div className="bg-purple-50 border border-purple-200 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-sm flex sm:block items-center justify-between sm:text-right">
+            <span className="text-[9px] sm:text-[10px] text-purple-700 font-bold uppercase block">
+              Total Fijos Mensuales
             </span>
-            <span className="font-mono font-bold text-sm text-purple-900">
+            <span className="font-mono font-bold text-xs sm:text-sm text-purple-900">
               {monedaSimbolo} {totalFixedMonthlyAmount.toFixed(2)} / mes
             </span>
           </div>
@@ -389,7 +389,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
           </div>
         ) : (
           <div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3 pt-1">
               {fixedExpensesList.map((tx) => {
                 const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
                 const isPendiente = tx.estado_pago === 'PENDIENTE';
@@ -400,7 +400,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 return (
                   <div
                     key={tx.id}
-                    className={`p-3 border rounded-sm flex items-center justify-between relative group transition-all shadow-xs ${
+                    className={`p-2.5 sm:p-3 border rounded-sm flex items-center justify-between relative group transition-all shadow-xs ${
                       isUrgent
                         ? 'bg-amber-100/80 border-amber-500 ring-2 ring-amber-400/80'
                         : isPendiente
@@ -418,9 +418,9 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                       <X className="w-3 h-3 stroke-[3]" />
                     </button>
 
-                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 pr-1.5 flex-1">
                       <div
-                        className={`w-8 h-8 rounded-sm flex items-center justify-center shrink-0 border ${
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-sm flex items-center justify-center shrink-0 border ${
                           isUrgent
                             ? 'bg-amber-200/80 border-amber-400'
                             : isPendiente
@@ -431,9 +431,9 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                         {getFixedExpenseIcon(tx)}
                       </div>
 
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div
-                          className="font-bold text-xs text-slate-900 truncate max-w-[130px] sm:max-w-[150px] md:max-w-[170px]"
+                          className="font-bold text-xs text-slate-900 truncate"
                           title={title}
                         >
                           {title}
@@ -441,22 +441,22 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                         <div className="mt-0.5">
                           {isPendiente ? (
                             isUrgent ? (
-                              <span className="text-amber-950 font-black bg-amber-300 border border-amber-500 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px] animate-pulse">
-                                <Bell className="w-2.5 h-2.5 text-amber-900 fill-amber-700" />
-                                <span>
+                              <span className="text-amber-950 font-black bg-amber-300 border border-amber-500 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-0.5 text-[9px] sm:text-[10px] animate-pulse">
+                                <Bell className="w-2.5 h-2.5 text-amber-900 fill-amber-700 shrink-0" />
+                                <span className="truncate">
                                   {daysRemaining <= 0
                                     ? `⚡ Vence hoy (Día ${dueDay})`
                                     : `⚡ Quedan ${daysRemaining}d (Día ${dueDay})`}
                                 </span>
                               </span>
                             ) : (
-                              <span className="text-amber-900 font-semibold bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px]">
-                                <Clock className="w-2.5 h-2.5 text-amber-700" />
+                              <span className="text-amber-900 font-semibold bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-0.5 text-[9px] sm:text-[10px]">
+                                <Clock className="w-2.5 h-2.5 text-amber-700 shrink-0" />
                                 <span>Vence día {dueDay}</span>
                               </span>
                             )
                           ) : (
-                            <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[10px]">
+                            <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-xs inline-flex items-center gap-1 text-[9px] sm:text-[10px]">
                               ✓ Pagado
                             </span>
                           )}
@@ -465,11 +465,11 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                     </div>
 
                     <div className="text-right flex flex-col items-end gap-1 shrink-0">
-                      <div className="font-mono font-bold text-xs text-slate-900">
+                      <div className="font-mono font-bold text-xs sm:text-sm text-slate-900">
                         {monedaSimbolo} {tx.monto_total.toFixed(2)}
                       </div>
                       {onUpdateTransaction && (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           {isPendiente ? (
                             <button
                               type="button"
@@ -478,11 +478,11 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                                   estado_pago: 'PAGADO',
                                 })
                               }
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-xs cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
-                              title="Haz clic cuando hayas realizado el pago (se sincroniza con Inicio)"
+                              className="px-2 py-0.5 sm:py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] sm:text-[10px] font-bold rounded-xs cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
+                              title="Haz clic cuando hayas realizado el pago"
                             >
-                              <CheckCircle2 className="w-3 h-3 text-white" />
-                              Marcar Pagado
+                              <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
+                              <span>Pagado</span>
                             </button>
                           ) : (
                             <button
@@ -494,7 +494,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                                 })
                               }
                               className="text-[9px] text-emerald-700 font-bold hover:bg-emerald-100/60 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer flex items-center gap-1"
-                              title="Haz clic si deseas cambiar a Pendiente y reactivar la alerta de vencimiento en Inicio"
+                              title="Haz clic si deseas cambiar a Pendiente"
                             >
                               <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
                               <span>Pagado</span>
@@ -512,36 +512,36 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
       </div>
 
       {/* 2. PROYECCION DE CAJA FUTURA (GASTOS FIJOS + CUOTAS DE CREDITO) */}
-      <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 mb-5 gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-600 rounded-sm flex items-center justify-center text-white shrink-0">
-              <CreditCard className="w-4 h-4" />
+      <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-3.5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 sm:pb-4 border-b border-slate-100 mb-3.5 sm:mb-5 gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-indigo-600 rounded-sm flex items-center justify-center text-white shrink-0">
+              <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
             <div>
               <h2 className="text-xs font-bold uppercase tracking-widest text-slate-800">
-                Proyección de Caja Futura (Gastos Fijos + Cuotas de Crédito)
+                Proyección de Caja Futura
               </h2>
-              <p className="text-[11px] text-slate-400">
-                Proyección mensual consolidada de compromisos fijos y dinero libre para los próximos 6 meses
+              <p className="text-[10px] sm:text-[11px] text-slate-400">
+                Gastos fijos + cuotas proyectados a 6 meses
               </p>
             </div>
           </div>
 
-          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-            {creditTxList.length} cuotas activas + {fixedExpensesList.length} gastos fijos
+          <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-sm bg-indigo-50 text-indigo-700 border border-indigo-200 self-start sm:self-auto shrink-0">
+            {creditTxList.length} cuotas activas + {fixedExpensesList.length} fijos
           </span>
         </div>
 
         {/* Summary Cards by Financial Entity / Bank if credit cards exist */}
         {creditTxList.length > 0 && (
-          <div className="mb-6">
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+          <div className="mb-4 sm:mb-6">
+            <div className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Resumen de Tarjetas de Crédito por Banco / Entidad:</span>
+              <span>Resumen de Tarjetas de Crédito por Banco:</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
               {availableEntities.map((entity) => {
                 const isSelected = selectedEntity === entity;
                 const data = entitiesMap[entity];
@@ -549,26 +549,26 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                   <button
                     key={entity}
                     onClick={() => setSelectedEntity(isSelected ? 'ALL' : entity)}
-                    className={`p-3 rounded-sm border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 sm:p-3 rounded-sm border text-left transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-indigo-900 text-white border-indigo-900 shadow-xs'
                         : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-bold truncate ${isSelected ? 'text-indigo-200' : 'text-indigo-600'}`}>
+                      <span className={`text-[11px] sm:text-xs font-bold truncate ${isSelected ? 'text-indigo-200' : 'text-indigo-600'}`}>
                         {entity}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-xs font-bold ${
+                      <span className={`text-[9px] sm:text-[10px] px-1 py-0.2 rounded-xs font-bold ${
                         isSelected ? 'bg-indigo-800 text-white' : 'bg-slate-200 text-slate-600'
                       }`}>
                         {data.count} {data.count === 1 ? 'cuota' : 'cuotas'}
                       </span>
                     </div>
 
-                    <div className="font-mono font-bold text-sm">
+                    <div className="font-mono font-bold text-xs sm:text-sm">
                       {monedaSimbolo} {data.monthlyTotal.toFixed(2)}{' '}
-                      <span className={`text-[10px] font-sans font-normal ${isSelected ? 'text-indigo-300' : 'text-slate-400'}`}>
+                      <span className={`text-[9px] sm:text-[10px] font-sans font-normal ${isSelected ? 'text-indigo-300' : 'text-slate-400'}`}>
                         / mes
                       </span>
                     </div>
@@ -581,16 +581,16 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
 
         {/* Filter Bar */}
         {availableEntities.length > 1 && (
-          <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-sm border border-slate-200 mb-5">
-            <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-50 p-2 sm:p-2.5 rounded-sm border border-slate-200 mb-3.5 sm:mb-5 gap-2">
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-600 font-medium">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <span>Filtrar cuotas por tarjeta:</span>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1 sm:gap-1.5 w-full sm:w-auto">
               <button
                 onClick={() => setSelectedEntity('ALL')}
-                className={`px-2.5 py-1 rounded-sm text-xs font-semibold cursor-pointer transition-colors ${
+                className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-sm text-[11px] sm:text-xs font-semibold cursor-pointer transition-colors ${
                   selectedEntity === 'ALL'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
@@ -602,7 +602,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 <button
                   key={entity}
                   onClick={() => setSelectedEntity(entity)}
-                  className={`px-2.5 py-1 rounded-sm text-xs font-semibold cursor-pointer transition-colors ${
+                  className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-sm text-[11px] sm:text-xs font-semibold cursor-pointer transition-colors ${
                     selectedEntity === entity
                       ? 'bg-indigo-600 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
@@ -616,7 +616,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
         )}
 
         {/* Monthly Projections Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {monthlyProjections.map((proj, idx) => {
             const dineroLibreEstimadoMes = ingresoMensual - metaAhorro - proj.totalMonthlyCommitments;
             const estaEnRiesgo = dineroLibreEstimadoMes < 0;
@@ -626,7 +626,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
             return (
               <div
                 key={idx}
-                className={`p-4 rounded-sm border transition-colors ${
+                className={`p-3 sm:p-4 rounded-sm border transition-colors ${
                   estaEnRiesgo
                     ? 'bg-rose-50/50 border-rose-200'
                     : idx === 0
@@ -645,12 +645,12 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                     )}
                   </div>
 
-                  <span className="font-mono font-bold text-sm text-slate-900">
+                  <span className="font-mono font-bold text-xs sm:text-sm text-slate-900">
                     {monedaSimbolo} {proj.totalMonthlyCommitments.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="text-[11px] bg-white p-2.5 rounded-sm border border-slate-200 mb-3 space-y-1">
+                <div className="text-[11px] bg-white p-2 sm:p-2.5 rounded-sm border border-slate-200 mb-2.5 space-y-1">
                   <div className="flex justify-between text-purple-900">
                     <span>Gastos Fijos Recurrentes:</span>
                     <strong className="font-mono">{monedaSimbolo} {proj.totalFixedExpenses.toFixed(2)}</strong>
@@ -674,7 +674,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 </div>
 
                 {proj.itemsList.length === 0 ? (
-                  <div className="text-[11px] text-slate-400 italic">
+                  <div className="text-[10px] sm:text-[11px] text-slate-400 italic">
                     Sin cuotas de tarjeta adicionales para este mes
                   </div>
                 ) : (
@@ -682,32 +682,32 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                     <button
                       type="button"
                       onClick={() => toggleMonthExpand(monthKey)}
-                      className="w-full flex items-center justify-between p-2 rounded-sm bg-white hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 transition-colors cursor-pointer shadow-2xs"
+                      className="w-full flex items-center justify-between p-1.5 sm:p-2 rounded-sm bg-white hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 transition-colors cursor-pointer shadow-2xs"
                     >
-                      <span className="flex items-center gap-1.5 text-indigo-900 font-bold">
+                      <span className="flex items-center gap-1.5 text-indigo-900 font-bold text-[11px] sm:text-xs">
                         <CreditCard className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                         <span className="truncate">
-                          {isExpanded ? 'Ocultar detalle de cuotas' : `Ver cuotas de crédito (${proj.itemsList.length})`}
+                          {isExpanded ? 'Ocultar detalle' : `Ver cuotas (${proj.itemsList.length})`}
                         </span>
                       </span>
-                      <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-indigo-700 shrink-0">
+                      <div className="flex items-center gap-1 text-[10px] sm:text-[11px] font-mono font-bold text-indigo-700 shrink-0">
                         {isExpanded ? (
-                          <ChevronUp className="w-4 h-4 text-slate-500" />
+                          <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-slate-500" />
+                          <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />
                         )}
                       </div>
                     </button>
 
                     {isExpanded && (
-                      <div className="mt-2 space-y-2 pt-2 border-t border-slate-200/80 animate-fadeIn">
+                      <div className="mt-2 space-y-1.5 pt-1.5 border-t border-slate-200/80 animate-fadeIn">
                         {proj.itemsList.map((item, itemIdx) => (
                           <div
                             key={itemIdx}
-                            className="p-2.5 bg-white rounded-sm border border-slate-200 text-[11px] shadow-2xs hover:border-indigo-200 transition-colors"
+                            className="p-2 sm:p-2.5 bg-white rounded-sm border border-slate-200 text-[10px] sm:text-[11px] shadow-2xs hover:border-indigo-200 transition-colors"
                           >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-bold text-slate-900 truncate max-w-[140px]">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="font-bold text-slate-900 truncate max-w-[130px] sm:max-w-[140px]">
                                 {item.concepto}
                               </span>
                               <span className="font-mono font-bold text-slate-900">
@@ -715,11 +715,11 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                               </span>
                             </div>
 
-                            <div className="flex items-center justify-between gap-1 text-[10px]">
-                              <span className="text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-xs truncate max-w-[120px]">
+                            <div className="flex items-center justify-between gap-1 text-[9px] sm:text-[10px]">
+                              <span className="text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded-xs truncate max-w-[110px] sm:max-w-[120px]">
                                 {item.entidad}
                               </span>
-                              <span className="text-indigo-800 font-bold uppercase tracking-wider bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-xs">
+                              <span className="text-indigo-800 font-bold uppercase tracking-wider bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded-xs">
                                 Cuota {item.cuotaActual}/{item.totalCuotas}
                               </span>
                             </div>

@@ -20,6 +20,78 @@ function getGeminiClient(): GoogleGenAI {
   return genAIClient;
 }
 
+export function extractDateFromPrompt(prompt: string): string {
+  const promptLower = (prompt || '').toLowerCase();
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1; // 1-12
+
+  // 1. Check relative days: "ayer", "anteayer", "hoy"
+  if (/\bayer\b/.test(promptLower)) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }
+  if (/\banteayer\b/.test(promptLower) || /\bante\s+ayer\b/.test(promptLower)) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 2);
+    return d.toISOString().split('T')[0];
+  }
+
+  // 2. Check full date DD/MM/YYYY or DD-MM-YYYY
+  const fullDateMatch = promptLower.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
+  if (fullDateMatch) {
+    const d = fullDateMatch[1].padStart(2, '0');
+    const m = fullDateMatch[2].padStart(2, '0');
+    const y = fullDateMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // 3. Check DD/MM or DD-MM (e.g. 30/08 or 30-08)
+  const shortDateMatch = promptLower.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);
+  if (shortDateMatch) {
+    const d = shortDateMatch[1].padStart(2, '0');
+    const m = shortDateMatch[2].padStart(2, '0');
+    return `${currentYear}-${m}-${d}`;
+  }
+
+  // 4. Check Spanish named months (e.g. "30 de agosto", "el 30 ago", "15 de setiembre")
+  const monthNamesMap: Record<string, string> = {
+    enero: '01', ene: '01',
+    febrero: '02', feb: '02',
+    marzo: '03', mar: '03',
+    abril: '04', abr: '04',
+    mayo: '05', may: '05',
+    junio: '06', jun: '06',
+    julio: '07', jul: '07',
+    agosto: '08', ago: '08',
+    setiembre: '09', septiembre: '09', sep: '09', set: '09',
+    octubre: '10', oct: '10',
+    noviembre: '11', nov: '11',
+    diciembre: '12', dic: '12',
+  };
+
+  const monthRegex = /\b(\d{1,2})\s*(?:de|\/|-)?\s*(enero|ene|febrero|feb|marzo|mar|abril|abr|mayo|may|junio|jun|julio|jul|agosto|ago|setiembre|septiembre|sep|set|octubre|oct|noviembre|nov|diciembre|dic)\b/i;
+  const monthMatch = promptLower.match(monthRegex);
+  if (monthMatch) {
+    const day = monthMatch[1].padStart(2, '0');
+    const monthKey = monthMatch[2].toLowerCase();
+    const monthNum = monthNamesMap[monthKey] || String(currentMonth).padStart(2, '0');
+    return `${currentYear}-${monthNum}-${day}`;
+  }
+
+  // 5. Check "el dia 30" or "el 30"
+  const dayOnlyMatch = promptLower.match(/\b(?:el\s+(?:día\s+|dia\s+)?|del\s+)(\d{1,2})\b/);
+  if (dayOnlyMatch) {
+    const day = parseInt(dayOnlyMatch[1], 10);
+    if (day >= 1 && day <= 31) {
+      return `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  return today.toISOString().split('T')[0];
+}
+
 // Fallback transaction parser if Gemini API hits 429 rate limit or missing key
 export function parseFallbackTransaction(
   textPrompt: string = '',
@@ -27,7 +99,7 @@ export function parseFallbackTransaction(
   budgetInfo: any = {}
 ) {
   const promptLower = (textPrompt || '').toLowerCase();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const transactionDate = extractDateFromPrompt(textPrompt);
 
   // Extract all numbers from prompt
   const numberMatches = textPrompt.match(/(\d+(?:[\.,]\d{1,2})?)/g) || [];
@@ -179,7 +251,7 @@ export function parseFallbackTransaction(
     promptLower.includes('huevos');
 
   return {
-    fecha: todayStr,
+    fecha: transactionDate,
     tipo_operacion: tipoOperacion,
     monto_total: montoTotal,
     metodo_pago: metodoPago,
@@ -497,6 +569,14 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
       console.warn('Gemini API temporalmente no disponible o cuota alcanzada. Usando motor heurístico de respaldo.');
       parsedData = parseFallbackTransaction(textPrompt, inputMode, budgetInfo);
       parsedData.fallbackReason = lastError?.message?.includes('429') ? 'quota_exceeded' : 'api_fallback';
+    }
+
+    if (parsedData) {
+      const promptDate = extractDateFromPrompt(textPrompt || '');
+      const todayISO = new Date().toISOString().split('T')[0];
+      if (promptDate !== todayISO && (!parsedData.fecha || parsedData.fecha === todayISO)) {
+        parsedData.fecha = promptDate;
+      }
     }
 
     return {

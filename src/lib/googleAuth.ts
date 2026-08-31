@@ -43,16 +43,102 @@ export const SCOPES = [
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
 
-let cachedAccessToken: string | null = (typeof window !== 'undefined' && localStorage.getItem('asistente_financiero_google_token')) || null;
+let cachedAccessToken: string | null = null;
+let cachedExpiresAt: number | null = null;
+
+export interface StoredAuthData {
+  token: string | null;
+  expiresAt: number | null;
+  isValid: boolean;
+  user: {
+    email: string | null;
+    displayName: string | null;
+    photoURL: string | null;
+    uid: string;
+  } | null;
+}
+
+export const getStoredAuthData = (): StoredAuthData => {
+  if (typeof window === 'undefined') {
+    return { token: null, expiresAt: null, isValid: false, user: null };
+  }
+  const token = localStorage.getItem('asistente_financiero_google_token');
+  const expiresAtStr = localStorage.getItem('asistente_financiero_token_expires_at');
+  const userJson = localStorage.getItem('asistente_financiero_google_user');
+
+  const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
+  const now = Date.now();
+  // Token is valid if expiresAt is in the future (with 30s buffer)
+  const isValid = !!token && (!expiresAt || expiresAt > now + 30000);
+
+  let user = null;
+  if (userJson) {
+    try {
+      user = JSON.parse(userJson);
+    } catch {}
+  }
+
+  if (token && !isValid) {
+    // Expired: auto clean-up
+    clearStoredAuth();
+    return { token: null, expiresAt: null, isValid: false, user: null };
+  }
+
+  return { token: isValid ? token : null, expiresAt, isValid, user };
+};
+
+export const saveAuthTokenAndUser = (
+  token: string,
+  user?: User | { email: string | null; displayName: string | null; photoURL: string | null; uid: string } | null,
+  expiresInSeconds: number = 3550
+) => {
+  if (typeof window === 'undefined') return;
+  const expiresAt = Date.now() + expiresInSeconds * 1000;
+  cachedAccessToken = token;
+  cachedExpiresAt = expiresAt;
+
+  localStorage.setItem('asistente_financiero_google_token', token);
+  localStorage.setItem('asistente_financiero_token_expires_at', expiresAt.toString());
+
+  if (user) {
+    const serializedUser = {
+      email: user.email || null,
+      displayName: user.displayName || null,
+      photoURL: user.photoURL || null,
+      uid: user.uid,
+    };
+    localStorage.setItem('asistente_financiero_google_user', JSON.stringify(serializedUser));
+  }
+};
+
+export const clearStoredAuth = () => {
+  cachedAccessToken = null;
+  cachedExpiresAt = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('asistente_financiero_google_token');
+    localStorage.removeItem('asistente_financiero_token_expires_at');
+    localStorage.removeItem('asistente_financiero_google_user');
+  }
+};
 
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User | any, token: string) => void,
   onAuthFailure?: () => void
 ) => {
   if (typeof window !== 'undefined') {
     setPersistence(auth, browserLocalPersistence).catch(() => {
       setPersistence(auth, inMemoryPersistence).catch(() => {});
     });
+
+    // Immediate hydration from localStorage if token is still valid and not expired
+    const stored = getStoredAuthData();
+    if (stored.isValid && stored.token) {
+      cachedAccessToken = stored.token;
+      cachedExpiresAt = stored.expiresAt;
+      if (onAuthSuccess && stored.user) {
+        onAuthSuccess(stored.user as any, stored.token);
+      }
+    }
   }
 
   // Catch redirect authentication results on load (for mobile or popups fallback)
@@ -61,11 +147,8 @@ export const initAuth = (
       if (result) {
         const credential = GoogleAuthProvider.credentialFromResult(result);
         if (credential?.accessToken) {
-          cachedAccessToken = credential.accessToken;
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('asistente_financiero_google_token', cachedAccessToken);
-          }
-          if (onAuthSuccess) onAuthSuccess(result.user, cachedAccessToken);
+          saveAuthTokenAndUser(credential.accessToken, result.user);
+          if (onAuthSuccess) onAuthSuccess(result.user, credential.accessToken);
         }
       }
     })
@@ -74,17 +157,14 @@ export const initAuth = (
     });
 
   return onAuthStateChanged(auth, async (user: User | null) => {
-    const token = cachedAccessToken || (typeof window !== 'undefined' && localStorage.getItem('asistente_financiero_google_token')) || null;
-    if (user && token) {
-      cachedAccessToken = token;
-      if (onAuthSuccess) onAuthSuccess(user, token);
-    } else if (user && !token) {
+    const stored = getStoredAuthData();
+    if (user && stored.isValid && stored.token) {
+      saveAuthTokenAndUser(stored.token, user);
+      if (onAuthSuccess) onAuthSuccess(user, stored.token);
+    } else if (user && !stored.token) {
       if (onAuthFailure) onAuthFailure();
-    } else {
-      cachedAccessToken = null;
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('asistente_financiero_google_token');
-      }
+    } else if (!user && !stored.isValid) {
+      clearStoredAuth();
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -109,10 +189,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
   try {
     const data = await runPopup();
-    cachedAccessToken = data.accessToken;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('asistente_financiero_google_token', cachedAccessToken);
-    }
+    saveAuthTokenAndUser(data.accessToken, data.user);
     return data;
   } catch (error: any) {
     const errorMsg = String(error?.message || error?.code || error || '');
@@ -127,10 +204,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       try {
         await setPersistence(auth, inMemoryPersistence);
         const retryData = await runPopup();
-        cachedAccessToken = retryData.accessToken;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('asistente_financiero_google_token', cachedAccessToken);
-        }
+        saveAuthTokenAndUser(retryData.accessToken, retryData.user);
         return retryData;
       } catch (retryError: any) {
         console.warn('Reintento con inMemoryPersistence falló:', retryError);
@@ -181,17 +255,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  if (!cachedAccessToken && typeof window !== 'undefined') {
-    cachedAccessToken = localStorage.getItem('asistente_financiero_google_token');
-  }
-  return cachedAccessToken;
+  const stored = getStoredAuthData();
+  return stored.isValid ? stored.token : null;
 };
 
 export const logoutGoogle = async () => {
   await signOut(auth);
-  cachedAccessToken = null;
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('asistente_financiero_google_token');
-  }
+  clearStoredAuth();
 };
 

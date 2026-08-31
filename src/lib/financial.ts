@@ -1,6 +1,78 @@
 import { TransactionRecord } from '../types';
 
 /**
+ * Normalizes any date string (ISO YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, DD/MM, timestamps, etc.)
+ * into a standardized strict ISO format: YYYY-MM-DD.
+ */
+export const normalizeDateToISO = (dateInput?: any): string => {
+  if (!dateInput) return new Date().toISOString().split('T')[0];
+  const str = String(dateInput).trim();
+  if (!str) return new Date().toISOString().split('T')[0];
+
+  // 1. If already standard ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // 2. Handle ISO string with time (e.g. 2026-08-30T12:00:00.000Z or 2026-08-30 14:20:00)
+  if (/^\d{4}-\d{2}-\d{2}[T\s]/.test(str)) {
+    return str.substring(0, 10);
+  }
+
+  // 3. Handle YYYY/MM/DD or YYYY.MM.DD
+  const ymdMatch = str.match(/^(\d{4})[\/\.](\d{1,2})[\/\.](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 4. Handle DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY (e.g. 30/08/2026 or 30-08-2026)
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // 5. Handle DD/MM/YY or DD-MM-YY (e.g. 30/08/26)
+  const dmyShortMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
+  if (dmyShortMatch) {
+    const d = dmyShortMatch[1].padStart(2, '0');
+    const m = dmyShortMatch[2].padStart(2, '0');
+    const y = `20${dmyShortMatch[3]}`;
+    return `${y}-${m}-${d}`;
+  }
+
+  // 6. Handle DD/MM or DD-MM without year (e.g. 30/08 or 30-08) -> assume current year
+  const dmMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (dmMatch) {
+    const d = dmMatch[1].padStart(2, '0');
+    const m = dmMatch[2].padStart(2, '0');
+    const y = new Date().getFullYear();
+    return `${y}-${m}-${d}`;
+  }
+
+  // 7. Fallback standard Date parsing
+  const parsed = Date.parse(str);
+  if (!isNaN(parsed)) {
+    try {
+      const dObj = new Date(parsed);
+      const y = dObj.getFullYear();
+      const m = String(dObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dObj.getDate()).padStart(2, '0');
+      if (y >= 2000 && y <= 2100) {
+        return `${y}-${m}-${d}`;
+      }
+    } catch {}
+  }
+
+  return str.length >= 10 && str.includes('-') ? str.substring(0, 10) : new Date().toISOString().split('T')[0];
+};
+
+/**
  * Resolves the true main category for an item or transaction.
  * Ensures health food, proteins, fruits, vegetables, groceries, and diet inputs
  * are classified as "Alimentación y Dieta", while "Gastos Hormiga y Antojos"

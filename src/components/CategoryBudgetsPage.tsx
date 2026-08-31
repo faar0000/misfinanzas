@@ -4,7 +4,7 @@ import {
   CATEGORIAS_BASE,
   TransactionRecord,
 } from '../types';
-import { getNormalizedCategoryName, getNormalizedSubcategoryName } from '../lib/financial';
+import { getNormalizedCategoryName, getNormalizedSubcategoryName, normalizeDateToISO } from '../lib/financial';
 import {
   Target,
   PiggyBank,
@@ -179,7 +179,7 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
   const currentMonthExpenses = transactions.filter(
     (t) =>
       t.tipo_operacion === 'GASTO' &&
-      t.fecha.startsWith(currentMonthStr) &&
+      normalizeDateToISO(t.fecha).startsWith(currentMonthStr) &&
       t.estado_pago !== 'PENDIENTE'
   );
 
@@ -578,44 +578,44 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
       )}
 
       {/* HEADER BANNER */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md p-4 sm:p-5 shadow-2xs">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md p-3.5 sm:p-5 shadow-2xs">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4 pb-2.5 sm:pb-3 border-b border-slate-200 dark:border-slate-800">
           <div>
             <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-xs">
-                <Target className="w-5 h-5" />
+              <span className="p-1 sm:p-1.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-xs">
+                <Target className="w-4 h-4 sm:w-5 sm:h-5" />
               </span>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
                 Presupuestos por Categoría
               </h2>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 capitalize">
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 capitalize">
               Control de metas de gasto mensual •{' '}
               <span className="font-semibold">{currentMonthName}</span>
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full md:w-auto">
             {!isEditingAll ? (
               <>
                 <button
                   onClick={() => openTransferForSource(categoriesWithSurplus[0]?.id || 'vehiculo')}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                   title="Mover remanente sobrante entre categorías"
                 >
                   <ArrowRightLeft className="w-3.5 h-3.5" />
-                  <span>Reasignar Remanente</span>
+                  <span>Reasignar</span>
                 </button>
                 <button
                   onClick={startEditing}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>Ajustar Limites</span>
+                  <span>Ajustar Límites</span>
                 </button>
                 <button
                   onClick={handleResetDefaultBudgets}
-                  className="px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-md text-xs font-medium flex items-center gap-1 transition-all cursor-pointer"
+                  className="px-2 sm:px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-md text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer"
                   title="Restablecer sugeridos"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -623,13 +623,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                 </button>
               </>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={handleSaveAllBudgets}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Guardar Cambios</span>
+                  <span>Guardar</span>
                 </button>
                 <button
                   onClick={() => setIsEditingAll(false)}
@@ -643,39 +643,39 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
         </div>
 
         {/* METRICS SUMMARY CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-md">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-0.5">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-md">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-0.5 truncate">
               Presupuesto Total
             </span>
-            <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+            <div className="text-sm sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
               {monedaSimbolo} {totalPresupuesto.toFixed(2)}
             </div>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block truncate">
+            <span className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 hidden sm:block truncate">
               Límites asignados en {CATEGORIAS_BASE.length} categorías
             </span>
           </div>
 
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-md">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-0.5">
-              Gastado al Momento
+          <div className="p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-md">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-0.5 truncate">
+              Gastado Actual
             </span>
-            <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+            <div className="text-sm sm:text-xl font-extrabold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
               {monedaSimbolo} {totalGastado.toFixed(2)}
             </div>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block truncate">
+            <span className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 hidden sm:block truncate">
               {porcentajeGlobalUso.toFixed(1)}% del presupuesto global usado
             </span>
           </div>
 
-          <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-md">
-            <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block mb-0.5">
-              Remanente Global Libre
+          <div className="p-2 sm:p-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-md">
+            <span className="text-[9px] sm:text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block mb-0.5 truncate">
+              Remanente Libre
             </span>
-            <div className="text-xl font-extrabold text-emerald-700 dark:text-emerald-400 font-mono tracking-tight">
+            <div className="text-sm sm:text-xl font-extrabold text-emerald-700 dark:text-emerald-400 font-mono tracking-tight">
               {monedaSimbolo} {totalDisponible.toFixed(2)}
             </div>
-            <span className="text-[10px] text-emerald-800 dark:text-emerald-400 mt-0.5 block truncate">
+            <span className="text-[9px] sm:text-[10px] text-emerald-800 dark:text-emerald-400 mt-0.5 hidden sm:block truncate">
               Sobrante acumulado disponible
             </span>
           </div>
@@ -782,7 +782,7 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
       </div>
 
       {/* CATEGORY CARDS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
         {CATEGORIAS_BASE.map((cat) => {
           const budget = categoryBudgets[cat.id] || 0;
           const spent = spentPerCategory[cat.id] || 0;
@@ -819,7 +819,7 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
           return (
             <div
               key={cat.id}
-              className={`bg-white dark:bg-slate-900 border rounded-md p-3.5 sm:p-4 shadow-2xs transition-all flex flex-col justify-between ${
+              className={`bg-white dark:bg-slate-900 border rounded-md p-3 sm:p-4 shadow-2xs transition-all flex flex-col justify-between ${
                 isOverBudget
                   ? 'border-rose-300 dark:border-rose-800'
                   : 'border-slate-200 dark:border-slate-800'
@@ -827,32 +827,32 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
             >
               <div>
                 {/* Card Header */}
-                <div className="flex items-start justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2.5">
+                <div className="flex items-start justify-between gap-2 mb-2 sm:mb-2.5">
+                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                     <div
-                      className="w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center text-white shrink-0 shadow-2xs"
+                      className="w-7 h-7 sm:w-9 sm:h-9 rounded-md flex items-center justify-center text-white shrink-0 shadow-2xs"
                       style={{ backgroundColor: cat.color }}
                     >
                       {getCategoryIcon(cat.iconoNombre)}
                     </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
                         {cat.nombre}
                       </h3>
-                      <span className={`inline-block text-[10px] px-2 py-0.5 rounded-xs font-medium mt-0.5 ${badgeClass}`}>
+                      <span className={`inline-block text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.2 sm:py-0.5 rounded-xs font-medium mt-0.5 truncate max-w-[170px] sm:max-w-none ${badgeClass}`}>
                         {badgeText}
                       </span>
                     </div>
                   </div>
 
                   {/* Inline budget value or input */}
-                  <div className="text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                  <div className="text-right shrink-0">
+                    <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
                       Presupuesto
                     </span>
                     {isEditingAll ? (
                       <div className="flex items-center gap-1 mt-0.5">
-                        <span className="text-xs font-mono font-bold text-slate-500">
+                        <span className="text-[11px] sm:text-xs font-mono font-bold text-slate-500">
                           {monedaSimbolo}
                         </span>
                         <input
@@ -865,11 +865,11 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                               : budget
                           }
                           onChange={(e) => handleInputChange(cat.id, e.target.value)}
-                          className="w-20 sm:w-24 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-xs font-mono font-bold text-right text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
+                          className="w-18 sm:w-24 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-[11px] sm:text-xs font-mono font-bold text-right text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
                         />
                       </div>
                     ) : (
-                      <div className="text-sm font-extrabold font-mono text-slate-900 dark:text-slate-100">
+                      <div className="text-xs sm:text-sm font-extrabold font-mono text-slate-900 dark:text-slate-100">
                         {monedaSimbolo} {budget.toFixed(2)}
                       </div>
                     )}
@@ -877,9 +877,9 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                 </div>
 
                 {/* Visual Progress Bar Section */}
-                <div className="space-y-1.5 my-3 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-200/80 dark:border-slate-800">
+                <div className="space-y-1 my-2 sm:my-3 p-2 sm:p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-200/80 dark:border-slate-800">
                   <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <div className="flex items-center gap-1 font-mono text-[10px] sm:text-[11px]">
                       <span className="text-slate-500 dark:text-slate-400 font-medium">Gastado:</span>
                       <span className="font-bold text-slate-900 dark:text-slate-100">
                         {monedaSimbolo} {spent.toFixed(2)}
@@ -889,13 +889,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                         {monedaSimbolo} {budget.toFixed(2)}
                       </span>
                     </div>
-                    <span className={`font-mono text-xs font-extrabold ${statusColorClass}`}>
+                    <span className={`font-mono text-[11px] sm:text-xs font-extrabold ${statusColorClass}`}>
                       {pct.toFixed(0)}%
                     </span>
                   </div>
 
                   {/* Progress track & fill */}
-                  <div className="relative w-full h-2.5 bg-slate-200/80 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div className="relative w-full h-2 sm:h-2.5 bg-slate-200/80 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-500 rounded-full ${barBgClass}`}
                       style={{ width: `${Math.min(100, pct)}%` }}
@@ -904,13 +904,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                 </div>
 
                 {/* Disponible / Restante Box with Quick Reassign Action */}
-                <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 rounded-md text-xs">
+                <div className="flex items-center justify-between p-2 sm:p-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 rounded-md text-xs">
                   <div>
-                    <span className="text-slate-500 dark:text-slate-400 text-[11px] block">
+                    <span className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-[11px] block">
                       {isOverBudget ? 'Monto Excedido:' : 'Saldo Sobrante:'}
                     </span>
                     <span
-                      className={`font-mono font-bold text-sm ${
+                      className={`font-mono font-bold text-xs sm:text-sm ${
                         isOverBudget
                           ? 'text-rose-600 dark:text-rose-400'
                           : 'text-emerald-600 dark:text-emerald-400'
@@ -927,11 +927,11 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
                     <button
                       type="button"
                       onClick={() => openTransferForSource(cat.id)}
-                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-md text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      className="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-md text-[10px] sm:text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                       title={`Reasignar ${monedaSimbolo} ${remaining.toFixed(2)} a otra categoría`}
                     >
                       <ArrowRightLeft className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                      <span>Mover Remanente</span>
+                      <span>Reasignar</span>
                     </button>
                   )}
                 </div>

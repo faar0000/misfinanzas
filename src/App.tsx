@@ -23,6 +23,7 @@ import {
   initAuth,
   googleSignIn,
   logoutGoogle,
+  getStoredAuthData,
 } from './lib/googleAuth';
 import {
   getLatestFixedExpenses,
@@ -30,6 +31,7 @@ import {
   areSameRecurringConcept,
   isUpcomingDueDateAlert,
   isSalaryIncomeTransaction,
+  normalizeDateToISO,
 } from './lib/financial';
 import {
   getOrCreateFinancialSpreadsheet,
@@ -192,7 +194,11 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
 ];
 
 const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => {
+  if (!Array.isArray(txs)) return [];
   return txs.map((tx) => {
+    // 1. Strictly normalize date into ISO format (YYYY-MM-DD)
+    const normalizedFecha = normalizeDateToISO(tx.fecha);
+
     // Heal orphaned pending recurring expenses:
     // If a transaction is marked PENDIENTE and is a fixed service concept (internet, gas, alquiler, luz, etc.)
     // but was degraded to PUNTUAL or es_gasto_fijo: false, restore its recurring fixed state.
@@ -234,11 +240,15 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
     if (tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && isRecurringKeyword && (tx.cuotas <= 1 || !tx.cuotas)) {
       return {
         ...tx,
+        fecha: normalizedFecha,
         es_gasto_fijo: true,
         frecuencia_recurrencia: 'MENSUAL' as const,
       };
     }
-    return tx;
+    return {
+      ...tx,
+      fecha: normalizedFecha,
+    };
   });
 };
 
@@ -322,9 +332,13 @@ export default function App() {
   }, [categoryBudgets]);
 
   // Google Drive & Sheets Integration State
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleUser, setGoogleUser] = useState<User | any | null>(() => {
+    const stored = getStoredAuthData();
+    return stored.isValid && stored.user ? stored.user : null;
+  });
   const [accessToken, setAccessToken] = useState<string | null>(() => {
-    return localStorage.getItem('asistente_financiero_google_token');
+    const stored = getStoredAuthData();
+    return stored.isValid ? stored.token : null;
   });
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [lastDriveSyncedAt, setLastDriveSyncedAt] = useState<string | null>(() => {
@@ -345,9 +359,8 @@ export default function App() {
         setAccessToken(token);
       },
       () => {
-        // Keep stored user state if token is in localStorage
-        const savedToken = localStorage.getItem('asistente_financiero_google_token');
-        if (!savedToken) {
+        const stored = getStoredAuthData();
+        if (!stored.isValid) {
           setGoogleUser(null);
           setAccessToken(null);
         }
@@ -414,7 +427,8 @@ export default function App() {
     );
     if (!confirmLoad) return;
 
-    const activeToken = tokenToUse || accessToken || localStorage.getItem('asistente_financiero_google_token');
+    const stored = getStoredAuthData();
+    const activeToken = tokenToUse || (stored.isValid ? stored.token : null) || accessToken;
     if (!activeToken) {
       await handleGoogleLogin();
       return;
@@ -474,7 +488,8 @@ export default function App() {
     currentTxs?: TransactionRecord[],
     isManual: boolean = false
   ) => {
-    const activeToken = tokenToUse || accessToken || localStorage.getItem('asistente_financiero_google_token');
+    const stored = getStoredAuthData();
+    const activeToken = tokenToUse || (stored.isValid ? stored.token : null) || accessToken;
     if (!activeToken) {
       if (isManual) {
         await handleGoogleLogin();
@@ -563,7 +578,8 @@ export default function App() {
   );
 
   transactions.forEach((tx) => {
-    const isCurrentMonth = !tx.fecha || tx.fecha.startsWith(currentMonthStr);
+    const isoFecha = normalizeDateToISO(tx.fecha);
+    const isCurrentMonth = !tx.fecha || isoFecha.startsWith(currentMonthStr);
 
     if (tx.tipo_operacion === 'INGRESO') {
       if (isCurrentMonth) {
@@ -607,7 +623,7 @@ export default function App() {
         t.tipo_operacion === 'GASTO' &&
         (t.es_gasto_fijo || fixedExpensesIdSet.has(t.id)) &&
         t.estado_pago !== 'PENDIENTE' &&
-        t.fecha.startsWith(currentMonthStr)
+        normalizeDateToISO(t.fecha).startsWith(currentMonthStr)
     )
     .reduce((sum, t) => sum + t.monto_total, 0);
 
@@ -711,15 +727,16 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
       const todayStr = new Date().toISOString().split('T')[0];
       const currentYear = new Date().getFullYear();
 
-      // Ensure date is reasonable (fallback to today if AI returned a past year like 2024 without prompt asking for it)
-      let validFecha = parsedData.fecha;
-      if (!validFecha || typeof validFecha !== 'string') {
-        validFecha = todayStr;
-      } else {
-        const yearInParsed = parseInt(validFecha.split('-')[0], 10);
-        const promptText = params.textPrompt || '';
-        const userExplicitlyRequestedPastYear = promptText.includes(yearInParsed.toString());
-        if (isNaN(yearInParsed) || (yearInParsed < currentYear && !userExplicitlyRequestedPastYear)) {
+      // Ensure date is normalized and reasonable (preserve month and day if AI returned an outdated year)
+      let validFecha = normalizeDateToISO(parsedData.fecha);
+      const dateParts = validFecha.split('-');
+      const yearInParsed = parseInt(dateParts[0], 10);
+      const promptText = params.textPrompt || '';
+      const userExplicitlyRequestedPastYear = promptText.includes(yearInParsed.toString());
+      if (isNaN(yearInParsed) || (yearInParsed < currentYear && !userExplicitlyRequestedPastYear)) {
+        if (dateParts.length === 3 && dateParts[1] && dateParts[2]) {
+          validFecha = `${currentYear}-${dateParts[1]}-${dateParts[2]}`;
+        } else {
           validFecha = todayStr;
         }
       }
