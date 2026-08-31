@@ -4,7 +4,7 @@ import {
   CATEGORIAS_BASE,
   TransactionRecord,
 } from '../types';
-import { getNormalizedCategoryName } from '../lib/financial';
+import { getNormalizedCategoryName, getNormalizedSubcategoryName } from '../lib/financial';
 import {
   Target,
   PiggyBank,
@@ -183,23 +183,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
       t.estado_pago !== 'PENDIENTE'
   );
 
-  const spentPerCategory: Record<string, number> = {
-    alimentacion: 0,
-    gastos_hormiga: 0,
-    vehiculo: 0,
-    servicios_fijos: 0,
-    ocio_salidas: 0,
-    credito_compromisos: 0,
-  };
+  const spentPerCategory: Record<string, number> = {};
+  const spentPerSubcategory: Record<string, Record<string, number>> = {};
 
-  const spentPerSubcategory: Record<string, Record<string, number>> = {
-    alimentacion: {},
-    gastos_hormiga: {},
-    vehiculo: {},
-    servicios_fijos: {},
-    ocio_salidas: {},
-    credito_compromisos: {},
-  };
+  CATEGORIAS_BASE.forEach((cat) => {
+    spentPerCategory[cat.id] = 0;
+    spentPerSubcategory[cat.id] = {};
+  });
 
   currentMonthExpenses.forEach((tx) => {
     let txMonthlyAmount = tx.monto_total || 0;
@@ -228,7 +218,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
 
         spentPerCategory[catId] = (spentPerCategory[catId] || 0) + itemAmount;
 
-        const subcatName = item.subcategoria || item.concepto || 'General';
+        const subcatName = getNormalizedSubcategoryName(
+          catId,
+          item.subcategoria,
+          item.concepto,
+          `${tx.titulo_resumen || ''} ${tx.comercio || ''} ${tx.mensaje_usuario || ''}`
+        );
+
         if (!spentPerSubcategory[catId]) {
           spentPerSubcategory[catId] = {};
         }
@@ -246,7 +242,13 @@ export const CategoryBudgetsPage: React.FC<CategoryBudgetsPageProps> = ({
 
       spentPerCategory[catId] = (spentPerCategory[catId] || 0) + txMonthlyAmount;
 
-      const subcatName = tx.titulo_resumen || tx.comercio || 'General';
+      const subcatName = getNormalizedSubcategoryName(
+        catId,
+        '',
+        tx.titulo_resumen || tx.comercio || 'General',
+        tx.mensaje_usuario || ''
+      );
+
       if (!spentPerSubcategory[catId]) {
         spentPerSubcategory[catId] = {};
       }

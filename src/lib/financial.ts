@@ -61,35 +61,12 @@ export const getNormalizedCategoryName = (
     return 'Gastos Hormiga y Antojos';
   }
 
-  // 2. Vehicle & Transport
-  const isVehicle =
-    c.includes('vehíc') ||
-    c.includes('vehic') ||
-    c.includes('auto') ||
-    s.includes('estacionamiento') ||
-    s.includes('cochera') ||
-    s.includes('parqueo') ||
-    s.includes('gasolina') ||
-    s.includes('combustible') ||
-    s.includes('peaje') ||
-    s.includes('repuesto') ||
-    s.includes('lavado') ||
-    k.includes('estacionamiento') ||
-    k.includes('cochera') ||
-    k.includes('parqueo') ||
-    k.includes('gasolina') ||
-    k.includes('combustible') ||
-    k.includes('peaje');
-
-  if (isVehicle) {
-    return 'Vehículo';
-  }
-
-  // 3. Home Equipment, Furniture, Scale, Appliances, Hardware, Home Repairs & Supplies (CAPEX / Variables)
+  // 2. Home Equipment, Furniture, Scale, Appliances, Hardware, Home Repairs & Cleaning Supplies (CAPEX / Variables)
   const isHouseholdEquipmentOrRepair =
     c.includes('mueble') ||
     c.includes('equipamiento') ||
     c.includes('ferreter') ||
+    c.includes('hogar') ||
     s.includes('mueble') ||
     s.includes('balanza') ||
     s.includes('electrodom') ||
@@ -100,6 +77,12 @@ export const getNormalizedCategoryName = (
     s.includes('licuadora') ||
     s.includes('artículos para el hogar') ||
     s.includes('articulos para el hogar') ||
+    s.includes('artículos de limpieza') ||
+    s.includes('articulos de limpieza') ||
+    s.includes('limpieza del hogar') ||
+    s.includes('limpieza de casa') ||
+    s.includes('articulos limpieza') ||
+    s.includes('artículos limpieza') ||
     s.includes('menaje') ||
     s.includes('utensilio') ||
     s.includes('cocina') ||
@@ -113,7 +96,9 @@ export const getNormalizedCategoryName = (
     s.includes('herramienta') ||
     s.includes('ferreter') ||
     s.includes('decoraci') ||
-    s.includes('limpieza') ||
+    s.includes('detergente') ||
+    s.includes('trapeador') ||
+    s.includes('escoba') ||
     k.includes('mueble') ||
     k.includes('mesa') ||
     k.includes('silla') ||
@@ -173,14 +158,78 @@ export const getNormalizedCategoryName = (
     k.includes('foco') ||
     k.includes('bombilla') ||
     k.includes('enchufe') ||
-    k.includes('limpieza') ||
+    k.includes('artículos de limpieza') ||
+    k.includes('articulos de limpieza') ||
     k.includes('detergente') ||
+    k.includes('lejía') ||
+    k.includes('lejia') ||
     k.includes('escoba') ||
     k.includes('trapeador') ||
+    k.includes('limpiador') ||
+    k.includes('lavavajilla') ||
+    k.includes('desinfectante') ||
     k.includes('donaci');
 
   if (isHouseholdEquipmentOrRepair) {
     return 'Hogar y Mantenimiento';
+  }
+
+  // 3. Vehicle & Transport
+  const isVehicle =
+    c.includes('vehíc') ||
+    c.includes('vehic') ||
+    c.includes('auto') ||
+    c.includes('carro') ||
+    c.includes('transporte') ||
+    c.includes('movilidad') ||
+    c.includes('taxi') ||
+    s.includes('estacionamiento') ||
+    s.includes('cochera') ||
+    s.includes('parqueo') ||
+    s.includes('gasolina') ||
+    s.includes('combustible') ||
+    s.includes('peaje') ||
+    s.includes('lavado de auto') ||
+    s.includes('lavado de carro') ||
+    s.includes('lavado auto') ||
+    s.includes('lavado carro') ||
+    s.includes('car wash') ||
+    s.includes('carwash') ||
+    s.includes('repuesto de auto') ||
+    s.includes('repuesto auto') ||
+    s.includes('repuestos auto') ||
+    s.includes('taxi') ||
+    s.includes('uber') ||
+    s.includes('cabify') ||
+    s.includes('mantenimiento auto') ||
+    s.includes('mantenimiento vehicular') ||
+    k.includes('estacionamiento') ||
+    k.includes('cochera') ||
+    k.includes('parqueo') ||
+    k.includes('gasolina') ||
+    k.includes('combustible') ||
+    k.includes('grifo') ||
+    k.includes('repsol') ||
+    k.includes('primax') ||
+    k.includes('peaje') ||
+    k.includes('lavado de auto') ||
+    k.includes('lavado de carro') ||
+    k.includes('lavado auto') ||
+    k.includes('lavado carro') ||
+    k.includes('car wash') ||
+    k.includes('carwash') ||
+    k.includes('taxi') ||
+    k.includes('pasaje') ||
+    k.includes('uber') ||
+    k.includes('cabify') ||
+    e.includes('lavado de carro') ||
+    e.includes('lavado de auto') ||
+    e.includes('lavado carro') ||
+    e.includes('lavado auto') ||
+    (c.includes('vehic') && (s.includes('lavado') || k.includes('lavado')));
+
+  if (isVehicle) {
+    return 'Vehículo';
   }
 
   // 4. Fixed Recurring Structural Utilities & Contracts (OPEX)
@@ -294,6 +343,629 @@ export const getNormalizedCategoryName = (
   }
 
   return 'Alimentación y Dieta';
+};
+
+/**
+ * Normalizes and unifies subcategory names to prevent duplicates in budget breakdowns,
+ * category reports, and transaction details.
+ * Maps synonyms, abbreviations, and informal names to the canonical base subcategories
+ * defined in CATEGORIAS_BASE, or standardizes unknown custom subcategories into Clean Title Case.
+ */
+export const getNormalizedSubcategoryName = (
+  categoryNameOrId?: string,
+  subcatName?: string,
+  concepto?: string,
+  extraText?: string
+): string => {
+  const cat = (categoryNameOrId || '').toLowerCase().trim();
+  const sub = (subcatName || '').toLowerCase().trim();
+  const con = (concepto || '').toLowerCase().trim();
+  const ext = (extraText || '').toLowerCase().trim();
+  const all = `${sub} ${con} ${ext}`;
+
+  // Helper to format unknown text into Title Case without duplicate spaces
+  const cleanTitleCase = (str: string): string => {
+    if (!str) return 'General';
+    return str
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/[_\-]+/g, ' ')
+      .split(' ')
+      .map((word) => {
+        if (word.length === 0) return '';
+        const lower = word.toLowerCase();
+        // Common Spanish prepositions/articles keep lowercase unless first word
+        if (['de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'o', 'por', 'a'].includes(lower)) {
+          return lower;
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ')
+      .replace(/^[a-z]/, (match) => match.toUpperCase());
+  };
+
+  // 1. ALIMENTACIÓN Y DIETA (alimentacion)
+  if (
+    cat === 'alimentacion' ||
+    cat.includes('alimentac') ||
+    cat.includes('dieta')
+  ) {
+    if (
+      all.includes('menu') ||
+      all.includes('menú') ||
+      all.includes('almuerzo') ||
+      all.includes('desayuno') ||
+      all.includes('cena') ||
+      all.includes('comida corrida') ||
+      all.includes('alimento planificado') ||
+      all.includes('comida preparada') ||
+      all.includes('menu ejecutivo') ||
+      all.includes('menú ejecutivo')
+    ) {
+      return 'Menú / Almuerzo';
+    }
+
+    if (
+      all.includes('prote') ||
+      all.includes('pollo') ||
+      all.includes('carne') ||
+      all.includes('pescado') ||
+      all.includes('huevo') ||
+      all.includes('suplement') ||
+      all.includes('creatina') ||
+      all.includes('whey') ||
+      all.includes('atun') ||
+      all.includes('atún') ||
+      all.includes('pechuga')
+    ) {
+      return 'Proteína y suplementos';
+    }
+
+    if (
+      all.includes('dieta') ||
+      all.includes('fruta') ||
+      all.includes('verdura') ||
+      all.includes('palta') ||
+      all.includes('avena') ||
+      all.includes('frutos secos') ||
+      all.includes('ensalada') ||
+      all.includes('saludable')
+    ) {
+      return 'Insumos de dieta estructurada';
+    }
+
+    if (
+      all.includes('supermercado') ||
+      all.includes('viveres') ||
+      all.includes('víveres') ||
+      all.includes('mercado') ||
+      all.includes('abarrote') ||
+      all.includes('compra') ||
+      all.includes('tottus') ||
+      all.includes('metro') ||
+      all.includes('plaza vea') ||
+      all.includes('wong') ||
+      all.includes('makro') ||
+      all.includes('mass')
+    ) {
+      return 'Supermercado';
+    }
+
+    if (sub) {
+      if (sub.includes('menu') || sub.includes('menú') || sub.includes('almuerzo') || sub.includes('desayuno') || sub.includes('cena')) return 'Menú / Almuerzo';
+      if (sub.includes('super') || sub.includes('compra') || sub.includes('viver') || sub.includes('mercado')) return 'Supermercado';
+      if (sub.includes('dieta') || sub.includes('salud')) return 'Insumos de dieta estructurada';
+      if (sub.includes('prote')) return 'Proteína y suplementos';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Supermercado';
+  }
+
+  // 2. GASTOS HORMIGA Y ANTOJOS (gastos_hormiga)
+  if (
+    cat === 'gastos_hormiga' ||
+    cat.includes('hormiga') ||
+    cat.includes('antojo')
+  ) {
+    if (
+      all.includes('chatarra') ||
+      all.includes('pizza') ||
+      all.includes('hamburguesa') ||
+      all.includes('burger') ||
+      all.includes('pollo a la brasa') ||
+      all.includes('salchipapa') ||
+      all.includes('bembos') ||
+      all.includes('kfc') ||
+      all.includes('mcdonald') ||
+      all.includes('fast food')
+    ) {
+      return 'Comida chatarra';
+    }
+
+    if (
+      all.includes('delivery') ||
+      all.includes('rappi') ||
+      all.includes('pedidosya') ||
+      all.includes('ubereats') ||
+      all.includes('no planificado')
+    ) {
+      return 'Deliveries no planificados';
+    }
+
+    if (
+      all.includes('bebida') ||
+      all.includes('snack') ||
+      all.includes('gaseosa') ||
+      all.includes('cerveza') ||
+      all.includes('galleta') ||
+      all.includes('piqueo') ||
+      all.includes('trago') ||
+      all.includes('licor') ||
+      all.includes('chips')
+    ) {
+      return 'Bebidas y snacks';
+    }
+
+    if (
+      all.includes('paseo') ||
+      all.includes('capricho') ||
+      all.includes('menor')
+    ) {
+      return 'Paseos y caprichos menores';
+    }
+
+    if (
+      all.includes('antojo') ||
+      all.includes('postre') ||
+      all.includes('helado') ||
+      all.includes('dulce') ||
+      all.includes('chocolate') ||
+      all.includes('torta') ||
+      all.includes('pastel')
+    ) {
+      return 'Antojos espontáneos';
+    }
+
+    if (sub) {
+      if (sub.includes('chatarra') || sub.includes('fast food')) return 'Comida chatarra';
+      if (sub.includes('delivery')) return 'Deliveries no planificados';
+      if (sub.includes('bebida') || sub.includes('snack') || sub.includes('cerveza')) return 'Bebidas y snacks';
+      if (sub.includes('antojo') || sub.includes('postre')) return 'Antojos espontáneos';
+      if (sub.includes('capricho')) return 'Paseos y caprichos menores';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Antojos espontáneos';
+  }
+
+  // 3. VEHÍCULO (vehiculo)
+  if (
+    cat === 'vehiculo' ||
+    cat.includes('vehic') ||
+    cat.includes('auto') ||
+    cat.includes('carro') ||
+    cat.includes('transporte') ||
+    cat.includes('movilidad')
+  ) {
+    if (
+      all.includes('gasolina') ||
+      all.includes('combustible') ||
+      all.includes('grifo') ||
+      all.includes('primax') ||
+      all.includes('repsol') ||
+      all.includes('pecsa') ||
+      all.includes('petroperu') ||
+      all.includes('gasohol') ||
+      all.includes('diesel') ||
+      all.includes('diésel')
+    ) {
+      return 'Gasolina / Combustible';
+    }
+
+    if (
+      all.includes('cochera') ||
+      all.includes('estacionamiento') ||
+      all.includes('parqueo') ||
+      all.includes('garage')
+    ) {
+      return 'Cochera';
+    }
+
+    if (
+      all.includes('peaje') ||
+      all.includes('rutas de lima') ||
+      all.includes('linea amarilla')
+    ) {
+      return 'Peajes';
+    }
+
+    if (
+      all.includes('lavado') ||
+      all.includes('lavada') ||
+      all.includes('car wash') ||
+      all.includes('carwash') ||
+      all.includes('repuesto') ||
+      all.includes('llanta') ||
+      all.includes('bateria') ||
+      all.includes('batería')
+    ) {
+      return 'Repuestos y lavado';
+    }
+
+    if (
+      all.includes('mantenimiento') ||
+      all.includes('mecanico') ||
+      all.includes('mecánico') ||
+      all.includes('aceite') ||
+      all.includes('revision') ||
+      all.includes('revisión') ||
+      all.includes('frenos') ||
+      all.includes('afinamiento')
+    ) {
+      return 'Mantenimiento preventivo/correctivo';
+    }
+
+    if (
+      all.includes('taxi') ||
+      all.includes('pasaje') ||
+      all.includes('uber') ||
+      all.includes('cabify') ||
+      all.includes('indrive') ||
+      all.includes('didi') ||
+      all.includes('metro') ||
+      all.includes('bus')
+    ) {
+      return 'Transporte público y taxi';
+    }
+
+    if (sub) {
+      if (sub.includes('gasolin') || sub.includes('combust')) return 'Gasolina / Combustible';
+      if (sub.includes('cocher') || sub.includes('estacion') || sub.includes('parqueo')) return 'Cochera';
+      if (sub.includes('peaje')) return 'Peajes';
+      if (sub.includes('lavad') || sub.includes('repuest')) return 'Repuestos y lavado';
+      if (sub.includes('mantenim') || sub.includes('mecanic')) return 'Mantenimiento preventivo/correctivo';
+      if (sub.includes('taxi') || sub.includes('uber') || sub.includes('pasaje')) return 'Transporte público y taxi';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Gasolina / Combustible';
+  }
+
+  // 4. SERVICIOS Y GASTOS FIJOS (servicios_fijos)
+  if (
+    cat === 'servicios_fijos' ||
+    cat.includes('servicio') ||
+    cat.includes('fijo')
+  ) {
+    if (
+      all.includes('alquiler') ||
+      all.includes('departamento') ||
+      all.includes('depa') ||
+      all.includes('renta')
+    ) {
+      return 'Alquiler de departamento';
+    }
+
+    if (
+      all.includes('mantenimiento') ||
+      all.includes('edificio') ||
+      all.includes('condominio')
+    ) {
+      return 'Mantenimiento de edificio';
+    }
+
+    if (
+      all.includes('luz') ||
+      all.includes('electricidad') ||
+      all.includes('enel') ||
+      all.includes('luz del sur')
+    ) {
+      return 'Luz / Electricidad';
+    }
+
+    if (
+      all.includes('agua') ||
+      all.includes('sedapal')
+    ) {
+      return 'Agua';
+    }
+
+    if (
+      all.includes('internet') ||
+      all.includes('cable') ||
+      all.includes('fibra') ||
+      all.includes('win') ||
+      all.includes('movistar') ||
+      all.includes('claro') ||
+      all.includes('telefono') ||
+      all.includes('teléfono') ||
+      all.includes('celular') ||
+      all.includes('entel') ||
+      all.includes('plan celular')
+    ) {
+      return 'Internet y Telefonía';
+    }
+
+    if (
+      all.includes('gas') ||
+      all.includes('calidda') ||
+      all.includes('cálidda') ||
+      all.includes('balon') ||
+      all.includes('balón')
+    ) {
+      return 'Gas domiciliario';
+    }
+
+    if (
+      all.includes('gym') ||
+      all.includes('gimnasio') ||
+      all.includes('smartfit') ||
+      all.includes('netflix') ||
+      all.includes('spotify') ||
+      all.includes('prime') ||
+      all.includes('disney') ||
+      all.includes('icloud') ||
+      all.includes('streaming') ||
+      all.includes('suscripci')
+    ) {
+      return 'Suscripciones (gimnasio, streaming)';
+    }
+
+    if (
+      all.includes('seguro') ||
+      all.includes('colegio') ||
+      all.includes('universidad') ||
+      all.includes('pension') ||
+      all.includes('pensión') ||
+      all.includes('arbitrio') ||
+      all.includes('predial')
+    ) {
+      return 'Pensiones y Seguros';
+    }
+
+    if (sub) {
+      if (sub.includes('alquiler')) return 'Alquiler de departamento';
+      if (sub.includes('mantenimiento')) return 'Mantenimiento de edificio';
+      if (sub.includes('luz') || sub.includes('electric')) return 'Luz / Electricidad';
+      if (sub.includes('agua')) return 'Agua';
+      if (sub.includes('internet') || sub.includes('telefon') || sub.includes('celular')) return 'Internet y Telefonía';
+      if (sub.includes('gas')) return 'Gas domiciliario';
+      if (sub.includes('suscrip') || sub.includes('gym') || sub.includes('stream')) return 'Suscripciones (gimnasio, streaming)';
+      if (sub.includes('seguro') || sub.includes('pension')) return 'Pensiones y Seguros';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Servicios y Gastos Fijos';
+  }
+
+  // 5. HOGAR Y MANTENIMIENTO (hogar_mantenimiento)
+  if (
+    cat === 'hogar_mantenimiento' ||
+    cat.includes('hogar') ||
+    cat.includes('mantenimiento')
+  ) {
+    if (
+      all.includes('mueble') ||
+      all.includes('mesa') ||
+      all.includes('silla') ||
+      all.includes('escritorio') ||
+      all.includes('cama') ||
+      all.includes('colchon') ||
+      all.includes('colchón') ||
+      all.includes('ropero') ||
+      all.includes('closet') ||
+      all.includes('sofa') ||
+      all.includes('sofá') ||
+      all.includes('sillon') ||
+      all.includes('sillón')
+    ) {
+      return 'Muebles y Equipamiento';
+    }
+
+    if (
+      all.includes('balanza') ||
+      all.includes('lavadora') ||
+      all.includes('secadora') ||
+      all.includes('refrigerador') ||
+      all.includes('nevera') ||
+      all.includes('microondas') ||
+      all.includes('licuadora') ||
+      all.includes('cafetera') ||
+      all.includes('tostadora') ||
+      all.includes('hervidor') ||
+      all.includes('freidora') ||
+      all.includes('air fryer') ||
+      all.includes('televisor') ||
+      all.includes('plancha') ||
+      all.includes('aspiradora') ||
+      all.includes('ventilador') ||
+      all.includes('electrodom')
+    ) {
+      return 'Electrodomésticos y Balanza';
+    }
+
+    if (
+      all.includes('reparaci') ||
+      all.includes('arreglo') ||
+      all.includes('gasfiter') ||
+      all.includes('fontaner') ||
+      all.includes('electricista') ||
+      all.includes('cerrajer') ||
+      all.includes('pintura') ||
+      all.includes('instalaci')
+    ) {
+      return 'Reparaciones y Arreglos del Hogar';
+    }
+
+    if (
+      all.includes('ferreter') ||
+      all.includes('taladro') ||
+      all.includes('martillo') ||
+      all.includes('herramienta') ||
+      all.includes('tornillo') ||
+      all.includes('clavo')
+    ) {
+      return 'Ferretería y Herramientas';
+    }
+
+    if (
+      all.includes('cortina') ||
+      all.includes('lampara') ||
+      all.includes('lámpara') ||
+      all.includes('alfombra') ||
+      all.includes('decoraci') ||
+      all.includes('cuadro')
+    ) {
+      return 'Decoración y Mejoras';
+    }
+
+    if (
+      all.includes('olla') ||
+      all.includes('sarten') ||
+      all.includes('sartén') ||
+      all.includes('vajilla') ||
+      all.includes('cubierto') ||
+      all.includes('menaje') ||
+      all.includes('utensilio') ||
+      all.includes('toalla') ||
+      all.includes('sabana') ||
+      all.includes('sábana') ||
+      all.includes('almohada') ||
+      all.includes('limpieza') ||
+      all.includes('detergente') ||
+      all.includes('escoba') ||
+      all.includes('trapeador') ||
+      all.includes('articulo') ||
+      all.includes('artículo')
+    ) {
+      return 'Artículos para el hogar y Menaje';
+    }
+
+    if (sub) {
+      if (sub.includes('mueble')) return 'Muebles y Equipamiento';
+      if (sub.includes('electro') || sub.includes('balanza')) return 'Electrodomésticos y Balanza';
+      if (sub.includes('reparac') || sub.includes('arregl') || sub.includes('gasfiter')) return 'Reparaciones y Arreglos del Hogar';
+      if (sub.includes('ferret') || sub.includes('herram')) return 'Ferretería y Herramientas';
+      if (sub.includes('decorac')) return 'Decoración y Mejoras';
+      if (sub.includes('menaje') || sub.includes('articul') || sub.includes('limpieza')) return 'Artículos para el hogar y Menaje';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Muebles y Equipamiento';
+  }
+
+  // 6. OCIO Y SALIDAS (ocio_salidas)
+  if (
+    cat === 'ocio_salidas' ||
+    cat.includes('ocio') ||
+    cat.includes('salida')
+  ) {
+    if (
+      all.includes('salida') ||
+      all.includes('restaurante') ||
+      all.includes('cena') ||
+      all.includes('almuerzo') ||
+      all.includes('bar') ||
+      all.includes('pareja')
+    ) {
+      return 'Salidas en pareja';
+    }
+
+    if (
+      all.includes('internet') ||
+      all.includes('online') ||
+      all.includes('amazon') ||
+      all.includes('aliexpress') ||
+      all.includes('tecnologia') ||
+      all.includes('tecnología') ||
+      all.includes('gadget') ||
+      all.includes('compra')
+    ) {
+      return 'Compras por internet/tecnología';
+    }
+
+    if (
+      all.includes('viaje') ||
+      all.includes('escapada') ||
+      all.includes('vuelo') ||
+      all.includes('hotel') ||
+      all.includes('hospedaje') ||
+      all.includes('turismo')
+    ) {
+      return 'Viajes/escapadas';
+    }
+
+    if (
+      all.includes('cine') ||
+      all.includes('concierto') ||
+      all.includes('teatro') ||
+      all.includes('juego') ||
+      all.includes('hobby') ||
+      all.includes('pasatiempo') ||
+      all.includes('entretenimiento')
+    ) {
+      return 'Pasatiempos y entretenimiento';
+    }
+
+    if (sub) {
+      if (sub.includes('salida') || sub.includes('restauran')) return 'Salidas en pareja';
+      if (sub.includes('internet') || sub.includes('tecnolog') || sub.includes('online')) return 'Compras por internet/tecnología';
+      if (sub.includes('viaje') || sub.includes('escapad')) return 'Viajes/escapadas';
+      if (sub.includes('cine') || sub.includes('pasatiemp') || sub.includes('entreten')) return 'Pasatiempos y entretenimiento';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Salidas en pareja';
+  }
+
+  // 7. CRÉDITO Y COMPROMISOS (credito_compromisos)
+  if (
+    cat === 'credito_compromisos' ||
+    cat.includes('credit') ||
+    cat.includes('compromiso')
+  ) {
+    if (
+      all.includes('cuota') ||
+      all.includes('diferid')
+    ) {
+      return 'Compras diferidas en cuotas';
+    }
+
+    if (
+      all.includes('prestamo') ||
+      all.includes('préstamo') ||
+      all.includes('amortiz')
+    ) {
+      return 'Préstamos y amortizaciones';
+    }
+
+    if (
+      all.includes('tarjeta') ||
+      all.includes('pago') ||
+      all.includes('estado de cuenta')
+    ) {
+      return 'Pagos de tarjeta de crédito';
+    }
+
+    if (sub) {
+      if (sub.includes('tarjeta')) return 'Pagos de tarjeta de crédito';
+      if (sub.includes('cuota')) return 'Compras diferidas en cuotas';
+      if (sub.includes('prestam') || sub.includes('amortiz')) return 'Préstamos y amortizaciones';
+      return cleanTitleCase(subcatName || '');
+    }
+
+    return 'Pagos de tarjeta de crédito';
+  }
+
+  // Fallback for general custom categories
+  if (subcatName && subcatName.trim()) {
+    return cleanTitleCase(subcatName);
+  }
+  if (concepto && concepto.trim()) {
+    return cleanTitleCase(concepto);
+  }
+  return 'General';
 };
 
 /**

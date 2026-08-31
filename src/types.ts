@@ -95,6 +95,7 @@ export const CATEGORIAS_BASE: CategoryDefinition[] = [
     iconoNombre: 'Apple',
     subcategoriasBase: [
       'Supermercado',
+      'Menú / Almuerzo',
       'Insumos de dieta estructurada',
       'Proteína y suplementos',
       'Compras de alimento planificado'

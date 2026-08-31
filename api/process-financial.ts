@@ -306,14 +306,14 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
    - Detección de Entidad Financiera / Banco: Extrae el nombre del banco o tarjeta si se menciona (ej: "Interbank", "BCP", "BBVA", "Scotiabank", "Diners", "CMR", "Efectivo").
    - Si se menciona "tarjeta de crédito", "tarjeta credito", "cuota", "interbank", "bcp", "bbva", etc., DEBES clasificar 'metodo_pago' = 'CREDITO'.
 
-5. Clasificación Estricta de Categorías Principales y Gastos Fijos vs Variables:
-   - 'Servicios y Gastos Fijos' (es_gasto_fijo = true, frecuencia_recurrencia = "MENSUAL"): Exclusivo para servicios básicos y compromisos periódicos obligatorios que vencen mes a mes (Alquiler de vivienda, Mantenimiento de edificio/condominio, Recibo de Luz, Recibo de Agua, Internet/Fibra, Plan celular, Gas domiciliario cálidda/balón, Pensiones de estudio, Suscripciones fijas, Seguros).
-   - 'Hogar y Mantenimiento' (es_gasto_fijo = false, frecuencia_recurrencia = "PUNTUAL"): Compras de bienes y equipamiento del hogar (Muebles, Balanza, Electrodomésticos, Menaje, Ollas, Vajilla), Reparaciones del hogar (reparación de lavadora, refrigeradora, gasfitería, pintura, cerrajería), Ferretería y Herramientas, y Artículos para el hogar.
-   - 'Vehículo' (frecuencia_recurrencia = "PUNTUAL"): Combustible/Gasolina, cochera/estacionamiento, peajes, repuestos, lavado y mantenimiento del auto.
-   - 'Alimentación y Dieta': Compras de mercado, supermercado, víveres saludables y comida planificada.
-   - 'Gastos Hormiga y Antojos': Comida rápida, deliveries no planificados, antojos espontáneos, snacks, dulces, gaseosas, cerveza.
-   - 'Ocio y Salidas': Salidas a comer, cine, pasatiempos, viajes y entretenimiento.
-   - 'Crédito y Compromisos': Pago de tarjetas de crédito o cuotas de préstamos.
+5. Clasificación Estricta de Categorías Principales y Subcategorías Estandarizadas:
+   - 'Servicios y Gastos Fijos' (es_gasto_fijo = true, frecuencia_recurrencia = "MENSUAL"): Subcategorías: 'Alquiler de departamento', 'Mantenimiento de edificio', 'Luz / Electricidad', 'Agua', 'Internet y Telefonía', 'Gas domiciliario', 'Suscripciones (gimnasio, streaming)', 'Pensiones y Seguros'.
+   - 'Hogar y Mantenimiento' (es_gasto_fijo = false, frecuencia_recurrencia = "PUNTUAL"): Subcategorías: 'Muebles y Equipamiento', 'Electrodomésticos y Balanza', 'Reparaciones y Arreglos del Hogar', 'Artículos para el hogar y Menaje', 'Ferretería y Herramientas', 'Decoración y Mejoras'.
+   - 'Vehículo' (frecuencia_recurrencia = "PUNTUAL"): Subcategorías: 'Gasolina / Combustible', 'Cochera', 'Mantenimiento preventivo/correctivo', 'Peajes', 'Repuestos y lavado'. (Nota: Todo gasto de auto, carro, lavado de auto, estacionamiento, peajes o transporte debe clasificarse en 'Vehículo', nunca en categorías no estándar como 'Transporte').
+   - 'Alimentación y Dieta': Subcategorías: 'Supermercado', 'Menú / Almuerzo', 'Insumos de dieta estructurada', 'Proteína y suplementos', 'Compras de alimento planificado'.
+   - 'Gastos Hormiga y Antojos': Subcategorías: 'Comida chatarra', 'Deliveries no planificados', 'Antojos espontáneos', 'Bebidas y snacks', 'Paseos y caprichos menores'.
+   - 'Ocio y Salidas': Subcategorías: 'Salidas en pareja', 'Compras por internet/tecnología', 'Viajes/escapadas', 'Pasatiempos y entretenimiento'.
+   - 'Crédito y Compromisos': Subcategorías: 'Pagos de tarjeta de crédito', 'Compras diferidas en cuotas', 'Préstamos y amortizaciones'.
 
    - REGLA DE ORO: Las compras de muebles, balanzas, electrodomésticos y reparaciones de artefactos/lavadora NUNCA son gastos fijos; pertenecen a 'Hogar y Mantenimiento' con es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL".
 

@@ -9,6 +9,7 @@ import {
 import { TransactionRecord, CATEGORIAS_BASE, BudgetSummary } from '../types';
 import {
   getNormalizedCategoryName,
+  getNormalizedSubcategoryName,
   getFinancialTier,
   PyGPersonalTier,
   isSalaryIncomeTransaction,
@@ -20,6 +21,10 @@ import {
   Filter,
   Layers,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  FolderTree,
+  Tag,
   X,
   CreditCard,
   ShoppingBag,
@@ -191,7 +196,7 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
       fecha: string;
       titulo: string;
       concepto: string;
-      subcategoria?: string;
+      subcategoria: string;
       montoCalculado: number;
       montoTotalCompra: number;
       metodoPago: string;
@@ -209,12 +214,61 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
       if (tx.tipo_operacion === 'GASTO') {
         const isCreditInstallment = tx.metodo_pago === 'CREDITO' && tx.cuotas > 1;
 
-        tx.items.forEach((item) => {
+        if (tx.items && tx.items.length > 0) {
+          const itemsSum = tx.items.reduce((s, i) => s + (i.monto || 0), 0);
+          tx.items.forEach((item) => {
+            const cat = getNormalizedCategoryName(
+              item.categoria_principal,
+              item.subcategoria,
+              item.concepto,
+              `${tx.titulo_resumen || ''} ${tx.comercio || ''}`
+            );
+
+            const matchesCategory = isOtrosSelected
+              ? (groupedOtrosCategories.length > 0
+                  ? groupedOtrosCategories.some((c) => c.toLowerCase() === cat.toLowerCase())
+                  : cat.toLowerCase() === 'otros')
+              : cat.toLowerCase() === targetCatLower;
+
+            if (matchesCategory) {
+              const subcat = getNormalizedSubcategoryName(
+                cat,
+                item.subcategoria,
+                item.concepto,
+                `${tx.titulo_resumen || ''} ${tx.comercio || ''} ${tx.mensaje_usuario || ''}`
+              );
+
+              const itemAmount = isCreditInstallment
+                ? itemsSum > 0
+                  ? (item.monto / itemsSum) * (tx.monto_cuota_mensual || tx.monto_total / tx.cuotas)
+                  : (tx.monto_cuota_mensual || tx.monto_total / tx.cuotas) / tx.items.length
+                : itemsSum > 0
+                ? (item.monto / itemsSum) * (tx.monto_total || item.monto)
+                : item.monto;
+
+              itemsList.push({
+                txId: tx.id,
+                fecha: tx.fecha,
+                titulo: tx.titulo_resumen || item.concepto || 'Gasto',
+                concepto: item.concepto,
+                subcategoria: subcat,
+                montoCalculado: itemAmount,
+                montoTotalCompra: tx.monto_total,
+                metodoPago: tx.metodo_pago,
+                cuotas: tx.cuotas,
+                montoCuotaMensual: tx.monto_cuota_mensual,
+                estadoPago: tx.estado_pago,
+                comercio: tx.comercio,
+                esGastoFijo: tx.es_gasto_fijo,
+              });
+            }
+          });
+        } else {
           const cat = getNormalizedCategoryName(
-            item.categoria_principal,
-            item.subcategoria,
-            item.concepto,
-            `${tx.titulo_resumen || ''} ${tx.comercio || ''}`
+            '',
+            '',
+            tx.titulo_resumen || tx.comercio || '',
+            ''
           );
 
           const matchesCategory = isOtrosSelected
@@ -224,16 +278,23 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
             : cat.toLowerCase() === targetCatLower;
 
           if (matchesCategory) {
+            const subcat = getNormalizedSubcategoryName(
+              cat,
+              '',
+              tx.titulo_resumen || tx.comercio || 'General',
+              tx.mensaje_usuario || ''
+            );
+
             const itemAmount = isCreditInstallment
-              ? (item.monto / (tx.monto_total || 1)) * tx.monto_cuota_mensual
-              : item.monto;
+              ? tx.monto_cuota_mensual || tx.monto_total / tx.cuotas
+              : tx.monto_total || 0;
 
             itemsList.push({
               txId: tx.id,
               fecha: tx.fecha,
-              titulo: tx.titulo_resumen || item.concepto || 'Gasto',
-              concepto: item.concepto,
-              subcategoria: item.subcategoria,
+              titulo: tx.titulo_resumen || tx.comercio || 'Gasto',
+              concepto: tx.titulo_resumen || tx.comercio || 'Gasto',
+              subcategoria: subcat,
               montoCalculado: itemAmount,
               montoTotalCompra: tx.monto_total,
               metodoPago: tx.metodo_pago,
@@ -244,12 +305,54 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
               esGastoFijo: tx.es_gasto_fijo,
             });
           }
-        });
+        }
       }
     });
 
     return itemsList.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
   }, [filteredTransactions, selectedCategory, groupedOtrosCategories]);
+
+  // Group detailed expenses by unified subcategory
+  const groupedCategoryDetailsBySubcat = useMemo(() => {
+    if (!categoryDetailItems || categoryDetailItems.length === 0) return [];
+
+    const totalCategorySpent = categoryDetailItems.reduce(
+      (sum, item) => sum + (item.montoCalculado || 0),
+      0
+    );
+
+    const groupMap: Record<
+      string,
+      {
+        subcategoria: string;
+        totalMonto: number;
+        items: typeof categoryDetailItems;
+      }
+    > = {};
+
+    categoryDetailItems.forEach((item) => {
+      const sub = item.subcategoria || 'General';
+      if (!groupMap[sub]) {
+        groupMap[sub] = {
+          subcategoria: sub,
+          totalMonto: 0,
+          items: [],
+        };
+      }
+      groupMap[sub].totalMonto += item.montoCalculado;
+      groupMap[sub].items.push(item);
+    });
+
+    return Object.values(groupMap)
+      .map((group) => ({
+        ...group,
+        porcentaje: totalCategorySpent > 0 ? (group.totalMonto / totalCategorySpent) * 100 : 0,
+        items: group.items.sort(
+          (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+        ),
+      }))
+      .sort((a, b) => b.totalMonto - a.totalMonto);
+  }, [categoryDetailItems]);
 
   // Calculate Standard Personal P&G (Estado de Resultados) and EBITDA Personal metrics
   const pygMetrics = useMemo(() => {
@@ -741,74 +844,104 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
             </button>
           </div>
 
-          {categoryDetailItems.length === 0 ? (
+          {groupedCategoryDetailsBySubcat.length === 0 ? (
             <div className="text-center py-6 text-indigo-300 text-xs italic">
               No existen ítems registrados en esta categoría para el período seleccionado.
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-              {categoryDetailItems.map((item, idx) => (
+            <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+              {groupedCategoryDetailsBySubcat.map((group, groupIdx) => (
                 <div
-                  key={`${item.txId}-${idx}`}
-                  className="bg-indigo-900/60 hover:bg-indigo-900/90 border border-indigo-800 rounded-xs p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors"
+                  key={`${group.subcategoria}-${groupIdx}`}
+                  className="bg-indigo-900/40 border border-indigo-800/80 rounded-sm overflow-hidden"
                 >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="p-2 bg-indigo-950/80 rounded-xs border border-indigo-800 shrink-0 text-indigo-300">
-                      {item.metodoPago === 'CREDITO' ? (
-                        <CreditCard className="w-4 h-4" />
-                      ) : (
-                        <ShoppingBag className="w-4 h-4" />
-                      )}
+                  {/* Subcategory Group Header */}
+                  <div className="bg-indigo-900/90 px-3.5 py-2.5 border-b border-indigo-800 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Tag className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="font-bold text-xs text-white tracking-wide truncate">
+                        {group.subcategoria}
+                      </span>
+                      <span className="bg-indigo-950/80 text-indigo-200 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border border-indigo-800/80">
+                        {group.items.length} {group.items.length === 1 ? 'registro' : 'registros'}
+                      </span>
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-xs text-white truncate">{item.titulo}</span>
-                        {item.comercio && (
-                          <span className="bg-indigo-800/80 text-indigo-200 text-[10px] px-1.5 py-0.5 rounded-xs font-semibold">
-                            🏬 {item.comercio}
-                          </span>
-                        )}
-                        {item.esGastoFijo && (
-                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
-                            📌 Gasto Fijo
-                          </span>
-                        )}
-                        {item.estadoPago === 'PENDIENTE' && (
-                          <span className="bg-orange-500/30 text-orange-200 border border-orange-500/50 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
-                            ⏳ Pendiente de Pago
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-indigo-300 mt-0.5 flex items-center gap-3 flex-wrap">
-                        <span>📅 {item.fecha}</span>
-                        <span>•</span>
-                        <span>Concepto: <strong className="text-white">{item.concepto}</strong></span>
-                        {item.subcategoria && (
-                          <>
-                            <span>•</span>
-                            <span className="text-indigo-400">{item.subcategoria}</span>
-                          </>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-2 ml-auto shrink-0 font-mono">
+                      <span className="text-xs font-extrabold text-amber-300">
+                        {monedaSimbolo} {group.totalMonto.toFixed(2)}
+                      </span>
+                      <span className="bg-indigo-950/90 text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded-xs border border-indigo-800/60">
+                        {group.porcentaje.toFixed(1)}%
+                      </span>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0 border-t md:border-t-0 border-indigo-800/60 pt-2 md:pt-0 flex md:flex-col items-center md:items-end justify-between">
-                    <div className="font-mono font-bold text-sm text-amber-300">
-                      - {monedaSimbolo} {item.montoCalculado.toFixed(2)}
-                      {item.metodoPago === 'CREDITO' && item.cuotas > 1 && (
-                        <span className="text-[10px] text-indigo-300 font-normal block md:inline md:ml-1">
-                          (/ mes en {item.cuotas} cuotas)
-                        </span>
-                      )}
-                    </div>
-                    {item.metodoPago === 'CREDITO' && item.cuotas > 1 && (
-                      <div className="text-[10px] text-indigo-400 font-mono">
-                        Compra total: {monedaSimbolo} {item.montoTotalCompra.toFixed(2)}
+                  {/* Individual items within this subcategory */}
+                  <div className="p-2 space-y-1.5 divide-y divide-indigo-900/40">
+                    {group.items.map((item, idx) => (
+                      <div
+                        key={`${item.txId}-${idx}`}
+                        className="p-2.5 rounded-xs hover:bg-indigo-900/50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-2.5"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className="p-1.5 bg-indigo-950/80 rounded-xs border border-indigo-800 shrink-0 text-indigo-300 mt-0.5">
+                            {item.metodoPago === 'CREDITO' ? (
+                              <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                            ) : (
+                              <ShoppingBag className="w-3.5 h-3.5 text-indigo-300" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-xs text-white truncate">
+                                {item.titulo}
+                              </span>
+                              {item.comercio && (
+                                <span className="bg-indigo-950/90 text-indigo-200 text-[10px] px-1.5 py-0.5 rounded-xs font-semibold border border-indigo-800/60">
+                                  🏬 {item.comercio}
+                                </span>
+                              )}
+                              {item.esGastoFijo && (
+                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
+                                  📌 Gasto Fijo
+                                </span>
+                              )}
+                              {item.estadoPago === 'PENDIENTE' && (
+                                <span className="bg-orange-500/30 text-orange-200 border border-orange-500/50 text-[10px] px-1.5 py-0.5 rounded-xs font-bold">
+                                  ⏳ Pendiente de Pago
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-indigo-300 mt-0.5 flex items-center gap-2.5 flex-wrap">
+                              <span>📅 {item.fecha}</span>
+                              <span>•</span>
+                              <span>
+                                Concepto: <strong className="text-white">{item.concepto}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 border-t md:border-t-0 border-indigo-800/60 pt-1.5 md:pt-0 flex md:flex-col items-center md:items-end justify-between">
+                          <div className="font-mono font-bold text-xs md:text-sm text-amber-300">
+                            - {monedaSimbolo} {item.montoCalculado.toFixed(2)}
+                            {item.metodoPago === 'CREDITO' && item.cuotas > 1 && (
+                              <span className="text-[10px] text-indigo-300 font-normal block md:inline md:ml-1">
+                                (/ mes en {item.cuotas} cuotas)
+                              </span>
+                            )}
+                          </div>
+                          {item.metodoPago === 'CREDITO' && item.cuotas > 1 && (
+                            <div className="text-[10px] text-indigo-400 font-mono">
+                              Compra total: {monedaSimbolo} {item.montoTotalCompra.toFixed(2)}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               ))}
