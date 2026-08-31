@@ -1004,9 +1004,10 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans pb-16 antialiased">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 md:pt-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 md:pt-6">
         {/* Navigation Bar Header */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md p-1.5 mb-3 shadow-2xs">
+          {/* Navigation Tabs */}
           <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 scrollbar-none">
             <button
               onClick={() => setActiveTab('inicio')}
