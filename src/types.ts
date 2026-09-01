@@ -63,6 +63,8 @@ export interface BudgetSummary {
   gastosVariables: number;
   saldoBancoReal: number;
   dineroLibreDisponible: number;
+  saldoInicialMesAnterior?: number; // Carryover / Rollover free balance from previous month
+  dineroLibreMesActual?: number; // Free money generated strictly in current month
   alertaAhorroComprometido: boolean;
 }
 

@@ -13,6 +13,7 @@ import {
   getFinancialTier,
   PyGPersonalTier,
   isSalaryIncomeTransaction,
+  computeMonthCarryoverBalance,
   normalizeDateToISO,
 } from '../lib/financial';
 import {
@@ -422,7 +423,14 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
     const ebitdaPersonal = ingresosBrutos - subsistencia; // Margen Operativo Personal
     const coberturaSubsistencia = subsistencia > 0 ? ingresosBrutos / subsistencia : (ingresosBrutos > 0 ? 99 : 0);
     const resultadoOperativo = ebitdaPersonal - operativoVariable - discrecional;
-    const flujoLibreFinal = resultadoOperativo - deudaPasivos;
+    const flujoLibreMes = resultadoOperativo - deudaPasivos;
+
+    // Calculate carryover rollover from prior months if a specific month is selected
+    const carryover = selectedMonth !== 'ALL'
+      ? computeMonthCarryoverBalance(transactions, selectedMonth, summary.ingresoMensual, 10).saldoInicialArrastrado
+      : 0;
+
+    const flujoLibreFinalConArrastre = flujoLibreMes + carryover;
 
     return {
       ingresosBrutos,
@@ -433,9 +441,11 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
       discrecional,
       resultadoOperativo,
       deudaPasivos,
-      flujoLibreFinal,
+      flujoLibreMes,
+      saldoInicialArrastrado: carryover,
+      flujoLibreFinal: flujoLibreFinalConArrastre,
     };
-  }, [filteredTransactions, selectedMonth, summary.ingresoMensual]);
+  }, [filteredTransactions, transactions, selectedMonth, summary.ingresoMensual]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-3.5 sm:p-6 mb-6">
@@ -682,11 +692,33 @@ export const FinancialAnalyticsChart: React.FC<FinancialAnalyticsChartProps> = (
             <span className="shrink-0">- {monedaSimbolo} {pygMetrics.deudaPasivos.toFixed(2)}</span>
           </div>
 
-          {/* Line 8: Flujo Libre Final */}
+          {/* Line 8: Flujo Libre del Mes */}
+          <div className="flex items-center justify-between text-indigo-200 py-0.5 sm:py-1 pl-2 sm:pl-4">
+            <span className="flex items-center gap-1.5 sm:gap-2 font-sans truncate mr-2">
+              <span className="w-4 h-4 sm:w-5 sm:h-5 bg-indigo-950 border border-indigo-700 rounded-xs flex items-center justify-center text-[9px] sm:text-[10px] text-indigo-300 font-black shrink-0">=</span>
+              <span className="truncate">Flujo Neto Generado Este Mes</span>
+            </span>
+            <span className="shrink-0">{monedaSimbolo} {pygMetrics.flujoLibreMes.toFixed(2)}</span>
+          </div>
+
+          {/* Line 9: (+) Saldo Inicial Arrastrado del Mes Anterior (si aplica) */}
+          {pygMetrics.saldoInicialArrastrado !== 0 && (
+            <div className="flex items-center justify-between text-teal-300 py-0.5 sm:py-1 pl-2 sm:pl-4">
+              <span className="flex items-center gap-1.5 sm:gap-2 font-sans truncate mr-2">
+                <span className="w-4 h-4 sm:w-5 sm:h-5 bg-teal-950 border border-teal-700 rounded-xs flex items-center justify-center text-[9px] sm:text-[10px] text-teal-300 font-black shrink-0">+</span>
+                <span className="truncate">Saldo Libre Arrastrado Mes Anterior</span>
+              </span>
+              <span className="shrink-0 font-bold">
+                {pygMetrics.saldoInicialArrastrado > 0 ? `+ ${monedaSimbolo} ${pygMetrics.saldoInicialArrastrado.toFixed(2)}` : `- ${monedaSimbolo} ${Math.abs(pygMetrics.saldoInicialArrastrado).toFixed(2)}`}
+              </span>
+            </div>
+          )}
+
+          {/* Line 10: Dinero Libre Disponible Acumulado */}
           <div className="flex items-center justify-between bg-indigo-900/60 border border-indigo-700 p-2 sm:p-2.5 rounded-xs text-white font-black text-xs sm:text-sm my-0.5 sm:my-1">
             <span className="flex items-center gap-1.5 sm:gap-2 font-sans truncate mr-2">
               <span className="w-4 h-4 sm:w-5 sm:h-5 bg-indigo-500 text-slate-950 rounded-xs flex items-center justify-center text-[9px] sm:text-[10px] font-black shrink-0">=</span>
-              <span className="truncate">FLUJO LIBRE NETO</span>
+              <span className="truncate">DINERO LIBRE TOTAL DISPONIBLE</span>
             </span>
             <span className="text-amber-300 font-mono shrink-0">{monedaSimbolo} {pygMetrics.flujoLibreFinal.toFixed(2)}</span>
           </div>

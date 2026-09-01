@@ -27,6 +27,7 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
 }) => {
   const [expenseViewMode, setExpenseViewMode] = useState<'proyectado' | 'ejecutado'>('proyectado');
   const [showExpenseInfo, setShowExpenseInfo] = useState(false);
+  const [showFreeMoneyInfo, setShowFreeMoneyInfo] = useState(false);
 
   const {
     ingresoMensual,
@@ -43,6 +44,8 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
     gastosFijos,
     saldoBancoReal,
     dineroLibreDisponible,
+    saldoInicialMesAnterior = 0,
+    dineroLibreMesActual = 0,
     alertaAhorroComprometido,
   } = summary;
 
@@ -301,9 +304,9 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
           )}
         </div>
 
-        {/* Card 4: Dinero Libre en Banco */}
+        {/* Card 4: Dinero Libre en Banco & Saldo Arrastrado */}
         <div
-          className={`bg-white dark:bg-slate-900 border p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between ${
+          className={`bg-white dark:bg-slate-900 border p-3.5 sm:p-4 shadow-2xs rounded-md flex flex-col justify-between relative ${
             alertaAhorroComprometido
               ? 'border-rose-300 dark:border-rose-800'
               : 'border-slate-200 dark:border-slate-800'
@@ -315,6 +318,29 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
                 <Wallet className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span className="truncate">Dinero Libre</span>
               </span>
+
+              {saldoInicialMesAnterior !== 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFreeMoneyInfo(!showFreeMoneyInfo)}
+                  className="px-1.5 py-0.5 rounded-xs bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-[9px] font-bold font-mono border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Ver desglose de saldo arrastrado del mes anterior"
+                >
+                  <span>
+                    {saldoInicialMesAnterior > 0 ? `+${monedaSimbolo}${saldoInicialMesAnterior.toFixed(0)} inicial` : `${monedaSimbolo}${saldoInicialMesAnterior.toFixed(0)} inicial`}
+                  </span>
+                  <span className="text-[10px] font-bold">ℹ</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowFreeMoneyInfo(!showFreeMoneyInfo)}
+                  className="w-4 h-4 rounded-full bg-slate-100 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-indigo-900 text-slate-500 dark:text-slate-400 hover:text-indigo-700 dark:hover:text-indigo-300 text-[10px] font-bold flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  title="Explicación de Dinero Libre y Saldo Inicial Arrastrado"
+                >
+                  ?
+                </button>
+              )}
             </div>
 
             <div
@@ -329,9 +355,39 @@ export const HeaderBudgetSummary: React.FC<HeaderBudgetSummaryProps> = ({
             </div>
           </div>
 
-          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
-            En banco: {monedaSimbolo} {saldoBancoReal.toFixed(0)} (tras 10% ahorro)
-          </p>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-2 truncate">
+            {saldoInicialMesAnterior !== 0 ? (
+              <span>
+                Este mes: {monedaSimbolo}{dineroLibreMesActual.toFixed(0)} | Arrastrado: {monedaSimbolo}{saldoInicialMesAnterior.toFixed(0)}
+              </span>
+            ) : (
+              <span>En banco: {monedaSimbolo} {saldoBancoReal.toFixed(0)} (tras 10% ahorro)</span>
+            )}
+          </div>
+
+          {/* Explanation popover for free money & carryover balance */}
+          {showFreeMoneyInfo && (
+            <div className="absolute top-12 left-2 right-2 z-20 p-2.5 bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-md text-[11px] text-indigo-950 dark:text-indigo-100 space-y-1.5 shadow-md animate-fadeIn">
+              <div className="flex items-center justify-between font-bold text-indigo-900 dark:text-indigo-200 text-[10px] uppercase">
+                <span>💰 Dinero Libre & Saldo Arrastrado</span>
+                <button
+                  onClick={() => setShowFreeMoneyInfo(false)}
+                  className="text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200 font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+              <p>
+                • <strong>Saldo Inicial Arrastrado:</strong> {monedaSimbolo} {saldoInicialMesAnterior.toFixed(2)} que quedó libre de los meses anteriores y no se gastó.
+              </p>
+              <p>
+                • <strong>Flujo Neto de Este Mes:</strong> {monedaSimbolo} {dineroLibreMesActual.toFixed(2)} (Ingresos recibidos este mes – Gastos pagados este mes – 10% ahorro blindado).
+              </p>
+              <p className="border-t border-indigo-200/60 dark:border-indigo-800/60 pt-1 font-semibold text-indigo-900 dark:text-indigo-200">
+                Total Disponible Real = {monedaSimbolo} {dineroLibreDisponible.toFixed(2)}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </header>

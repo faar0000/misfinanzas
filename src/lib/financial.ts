@@ -1444,6 +1444,101 @@ export const isSalaryIncomeTransaction = (tx: TransactionRecord): boolean => {
 };
 
 /**
+ * Computes the historical free money (net rollover balance) from all previous months up to the start of a given month.
+ * Target month in format 'YYYY-MM'.
+ */
+export const computeMonthCarryoverBalance = (
+  transactions: TransactionRecord[],
+  targetMonthKey: string,
+  baseMonthlySalary: number,
+  savingsRatePercentage: number = 10
+): { saldoInicialArrastrado: number; desgloseMesAnterior: { ingresos: number; gastos: number; ahorro: number; netoMes: number } | null } => {
+  if (!targetMonthKey || !/^\d{4}-\d{2}$/.test(targetMonthKey)) {
+    return { saldoInicialArrastrado: 0, desgloseMesAnterior: null };
+  }
+
+  // Find all unique months prior to targetMonthKey in chronological order
+  const priorMonthsSet = new Set<string>();
+  transactions.forEach((tx) => {
+    const iso = normalizeDateToISO(tx.fecha);
+    if (iso && iso.length >= 7) {
+      const m = iso.substring(0, 7);
+      if (m < targetMonthKey) {
+        priorMonthsSet.add(m);
+      }
+    }
+  });
+
+  const sortedPriorMonths = Array.from(priorMonthsSet).sort((a, b) => a.localeCompare(b));
+  if (sortedPriorMonths.length === 0) {
+    return { saldoInicialArrastrado: 0, desgloseMesAnterior: null };
+  }
+
+  let totalCumulativeRollover = 0;
+  let lastMonthBreakdown: { ingresos: number; gastos: number; ahorro: number; netoMes: number } | null = null;
+
+  sortedPriorMonths.forEach((mKey) => {
+    let mesIngresos = 0;
+    let mesGastos = 0;
+    let mesSueldo = 0;
+    let mesExtra = 0;
+
+    const [yStr, mStr] = mKey.split('-');
+    const monthDate = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1, 15);
+
+    transactions.forEach((tx) => {
+      const iso = normalizeDateToISO(tx.fecha);
+      if (!iso.startsWith(mKey)) return;
+
+      if (tx.tipo_operacion === 'INGRESO') {
+        mesIngresos += tx.monto_total || 0;
+        if (isSalaryIncomeTransaction(tx)) {
+          mesSueldo += tx.monto_total || 0;
+        } else {
+          mesExtra += tx.monto_total || 0;
+        }
+      } else if (tx.tipo_operacion === 'GASTO') {
+        // Only executed payments in historical months count for real cash flow
+        if (tx.estado_pago !== 'PENDIENTE') {
+          const isCredit = tx.metodo_pago === 'CREDITO' && (tx.cuotas > 1 || (tx.cuota_actual && tx.cuota_actual > 1));
+          if (isCredit) {
+            const activeInst = getActiveInstallmentForMonth(tx, monthDate);
+            if (activeInst) {
+              mesGastos += activeInst.montoCuota;
+            } else {
+              mesGastos += tx.monto_cuota_mensual || tx.monto_total || 0;
+            }
+          } else {
+            mesGastos += tx.monto_total || 0;
+          }
+        }
+      }
+    });
+
+    const baseEffectiveIncome = Math.max(baseMonthlySalary, mesSueldo) + mesExtra;
+    const mesAhorroMeta = (baseEffectiveIncome * savingsRatePercentage) / 100;
+    // Net free cash at end of that month = (Cash received - Cash spent) - Protected 10% savings
+    const netoMes = (mesIngresos - mesGastos) - mesAhorroMeta;
+
+    totalCumulativeRollover += netoMes;
+
+    if (mKey === sortedPriorMonths[sortedPriorMonths.length - 1]) {
+      lastMonthBreakdown = {
+        ingresos: mesIngresos,
+        gastos: mesGastos,
+        ahorro: mesAhorroMeta,
+        netoMes,
+      };
+    }
+  });
+
+  return {
+    saldoInicialArrastrado: totalCumulativeRollover,
+    desgloseMesAnterior: lastMonthBreakdown,
+  };
+};
+
+/**
  * Calculates the active installment details for a credit card purchase on a specific target calendar month.
  * Returns null if the purchase has already finished or has not yet begun for that month.
  */

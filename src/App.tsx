@@ -34,6 +34,7 @@ import {
   isUpcomingDueDateAlert,
   isSalaryIncomeTransaction,
   getActiveInstallmentForMonth,
+  computeMonthCarryoverBalance,
   normalizeDateToISO,
 } from './lib/financial';
 import {
@@ -653,10 +654,20 @@ export default function App() {
     gastosFijosPendientesDelMes + cuotasCreditoPendientes
   );
   const gastosTotalesProyectados = gastosEjecutadosReal + compromisosPendientesFinDeMes;
+  // Historical rollover free money (saldo inicial arrastrado) from all previous closed months
+  const { saldoInicialArrastrado } = computeMonthCarryoverBalance(
+    transactions,
+    currentMonthStr,
+    config.ingresoMensual,
+    config.porcentajeAhorroMeta
+  );
+
   // Actual money in bank account = total income minus actual executed payments
   const saldoBancoReal = ingresosCobradosTotal - gastosEjecutadosReal;
-  // Free money after protecting 10% savings
-  const dineroLibreDisponible = saldoBancoReal - metaAhorroMonto;
+  // Free money generated strictly within the current month
+  const dineroLibreMesActual = saldoBancoReal - metaAhorroMonto;
+  // Total available free money including rollover from previous months
+  const dineroLibreDisponible = dineroLibreMesActual + saldoInicialArrastrado;
   const alertaAhorroComprometido = dineroLibreDisponible < 0;
 
   const porcentajeCobrado = Math.min(
@@ -682,6 +693,8 @@ export default function App() {
     gastosVariables,
     saldoBancoReal,
     dineroLibreDisponible,
+    saldoInicialMesAnterior: saldoInicialArrastrado,
+    dineroLibreMesActual,
     alertaAhorroComprometido,
   };
 
