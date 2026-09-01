@@ -25,7 +25,13 @@ import {
   Shield,
 } from 'lucide-react';
 import { TransactionRecord } from '../types';
-import { getLatestFixedExpenses, getRecurringConceptKey, isUpcomingDueDateAlert } from '../lib/financial';
+import {
+  getLatestFixedExpenses,
+  getRecurringConceptKey,
+  isUpcomingDueDateAlert,
+  getActiveInstallmentForMonth,
+  normalizeDateToISO,
+} from '../lib/financial';
 
 // Helper to get category icon for fixed expenses
 const getFixedExpenseIcon = (tx: TransactionRecord) => {
@@ -181,8 +187,38 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
     0
   );
 
-  // 2. Filter all credit card transactions with cuotas or credit payment method
-  const creditTxList = transactions.filter(
+  // 2. Identify active credit card transactions based on exact calendar month progression
+  const currentMonthDate = new Date();
+
+  // All credit purchases with active installments in the current month
+  const activeCreditThisMonthList = transactions
+    .map((tx) => {
+      const activeInst = getActiveInstallmentForMonth(tx, currentMonthDate);
+      return { tx, activeInst };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        tx: TransactionRecord;
+        activeInst: { cuotaActual: number; totalCuotas: number; montoCuota: number };
+      } => item.activeInst !== null
+    );
+
+  // Group current active credit by financial entity
+  const entitiesMap: { [key: string]: { count: number; monthlyTotal: number } } = {};
+
+  activeCreditThisMonthList.forEach(({ tx, activeInst }) => {
+    const entity = tx.entidad_financiera?.trim() || 'Tarjeta de Crédito Generica';
+    if (!entitiesMap[entity]) {
+      entitiesMap[entity] = { count: 0, monthlyTotal: 0 };
+    }
+    entitiesMap[entity].count += 1;
+    entitiesMap[entity].monthlyTotal += activeInst.montoCuota;
+  });
+
+  // Also register any entities present in credit transactions so they appear in filters
+  const allCreditTxs = transactions.filter(
     (t) =>
       t.tipo_operacion === 'GASTO' &&
       (t.metodo_pago === 'CREDITO' ||
@@ -191,30 +227,17 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
         (t.cuotas_restantes && t.cuotas_restantes > 0))
   );
 
-  // Group credit by financial entity
-  const entitiesMap: { [key: string]: { count: number; monthlyTotal: number } } = {};
-
-  creditTxList.forEach((tx) => {
+  allCreditTxs.forEach((tx) => {
     const entity = tx.entidad_financiera?.trim() || 'Tarjeta de Crédito Generica';
     if (!entitiesMap[entity]) {
       entitiesMap[entity] = { count: 0, monthlyTotal: 0 };
     }
-    entitiesMap[entity].count += 1;
-    entitiesMap[entity].monthlyTotal += tx.monto_cuota_mensual;
   });
 
   const availableEntities = Object.keys(entitiesMap);
 
-  // Filter by selected bank/entity if applied
-  const filteredCreditTxs = creditTxList.filter((tx) => {
-    if (selectedEntity === 'ALL') return true;
-    const entity = tx.entidad_financiera?.trim() || 'Tarjeta de Crédito Generica';
-    return entity === selectedEntity;
-  });
-
   // Calculate monthly projection for future 6 months
   const monthsAhead = 6;
-  const currentMonthDate = new Date();
 
   const monthlyProjections: {
     monthName: string;
@@ -251,18 +274,19 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
       entidad: string;
     }[] = [];
 
-    filteredCreditTxs.forEach((tx) => {
-      const cuotaInicial = tx.cuota_actual || 1;
-      const cuotaActualMes = cuotaInicial + i;
+    transactions.forEach((tx) => {
+      const entity = tx.entidad_financiera?.trim() || 'Tarjeta de Crédito Generica';
+      if (selectedEntity !== 'ALL' && entity !== selectedEntity) return;
 
-      if (cuotaActualMes <= tx.cuotas) {
-        totalCuotas += tx.monto_cuota_mensual;
+      const activeInst = getActiveInstallmentForMonth(tx, targetDate);
+      if (activeInst) {
+        totalCuotas += activeInst.montoCuota;
         itemsList.push({
           concepto: tx.titulo_resumen || tx.items[0]?.concepto || 'Compra en cuotas',
-          cuotaActual: cuotaActualMes,
-          totalCuotas: tx.cuotas,
-          montoCuota: tx.monto_cuota_mensual,
-          entidad: tx.entidad_financiera || 'Tarjeta Crédito',
+          cuotaActual: activeInst.cuotaActual,
+          totalCuotas: activeInst.totalCuotas,
+          montoCuota: activeInst.montoCuota,
+          entidad: entity,
         });
       }
     });
@@ -347,39 +371,6 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
             >
               ✕
             </button>
-          </div>
-        )}
-
-        {urgentAlertsCount > 0 && (
-          <div className="bg-slate-900/95 dark:bg-slate-900/95 border-2 border-amber-500 p-3.5 rounded-md mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-100 shadow-md animate-fadeIn">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-amber-500/20 border border-amber-500/40 rounded-full flex items-center justify-center shrink-0">
-                <Bell className="w-4 h-4 text-amber-400 animate-bounce" />
-              </div>
-              <div>
-                <div className="font-bold uppercase tracking-wider text-amber-400 text-[11px] flex items-center gap-2 flex-wrap">
-                  <span>RECORDATORIO DE VENCIMIENTO PRÓXIMO</span>
-                  <span className="bg-rose-600 text-white text-[10px] px-2 py-0.2 rounded-full font-extrabold animate-pulse">
-                    ⚡ {urgentAlertsCount} {urgentAlertsCount === 1 ? 'alerta activa (vence ≤ 4 días)' : 'alertas activas (vencen ≤ 4 días)'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-200 font-medium mt-0.5 leading-snug">
-                  <strong className="text-amber-400 font-bold">Atención:</strong> Tienes <strong className="font-extrabold text-white">{urgentAlertsCount}</strong> compromiso(s) impagado(s) a 4 días o menos de su fecha límite. Al marcarlo como pagado aquí o en Inicio, se desactiva la alerta.
-                </p>
-              </div>
-            </div>
-
-            {onNavigateToInicio && (
-              <button
-                type="button"
-                onClick={onNavigateToInicio}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] rounded-xs shadow-xs transition-colors flex items-center gap-1 cursor-pointer shrink-0 self-start sm:self-auto"
-                title="Volver a la pantalla de Inicio"
-              >
-                <span>Ir a Inicio</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
         )}
 
@@ -475,6 +466,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                               type="button"
                               onClick={() =>
                                 onUpdateTransaction(tx.id, {
+                                  ...tx,
                                   estado_pago: 'PAGADO',
                                 })
                               }
@@ -489,6 +481,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                               type="button"
                               onClick={() =>
                                 onUpdateTransaction(tx.id, {
+                                  ...tx,
                                   estado_pago: 'PENDIENTE',
                                   dia_pago_mensual: dueDay,
                                 })
@@ -529,12 +522,12 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
           </div>
 
           <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-sm bg-indigo-50 text-indigo-700 border border-indigo-200 self-start sm:self-auto shrink-0">
-            {creditTxList.length} cuotas activas + {fixedExpensesList.length} fijos
+            {activeCreditThisMonthList.length} cuotas activas este mes + {fixedExpensesList.length} fijos
           </span>
         </div>
 
         {/* Summary Cards by Financial Entity / Bank if credit cards exist */}
-        {creditTxList.length > 0 && (
+        {allCreditTxs.length > 0 && (
           <div className="mb-4 sm:mb-6">
             <div className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-indigo-600" />
@@ -596,7 +589,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                     : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
                 }`}
               >
-                Todas ({creditTxList.length})
+                Todas ({activeCreditThisMonthList.length})
               </button>
               {availableEntities.map((entity) => (
                 <button

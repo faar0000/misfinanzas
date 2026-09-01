@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import {
   TransactionRecord,
+  TransactionItem,
   BudgetConfig,
   BudgetSummary,
 } from './types';
@@ -24,6 +25,7 @@ import {
   googleSignIn,
   logoutGoogle,
   getStoredAuthData,
+  getValidGoogleAccessToken,
 } from './lib/googleAuth';
 import {
   getLatestFixedExpenses,
@@ -31,6 +33,7 @@ import {
   areSameRecurringConcept,
   isUpcomingDueDateAlert,
   isSalaryIncomeTransaction,
+  getActiveInstallmentForMonth,
   normalizeDateToISO,
 } from './lib/financial';
 import {
@@ -427,8 +430,7 @@ export default function App() {
     );
     if (!confirmLoad) return;
 
-    const stored = getStoredAuthData();
-    const activeToken = tokenToUse || (stored.isValid ? stored.token : null) || accessToken;
+    const activeToken = tokenToUse || (await getValidGoogleAccessToken()) || accessToken;
     if (!activeToken) {
       await handleGoogleLogin();
       return;
@@ -488,8 +490,7 @@ export default function App() {
     currentTxs?: TransactionRecord[],
     isManual: boolean = false
   ) => {
-    const stored = getStoredAuthData();
-    const activeToken = tokenToUse || (stored.isValid ? stored.token : null) || accessToken;
+    const activeToken = tokenToUse || (await getValidGoogleAccessToken()) || accessToken;
     if (!activeToken) {
       if (isManual) {
         await handleGoogleLogin();
@@ -592,14 +593,19 @@ export default function App() {
       }
     } else if (tx.tipo_operacion === 'GASTO') {
       const esPendiente = tx.estado_pago === 'PENDIENTE';
+      const isCreditInstallment =
+        tx.metodo_pago === 'CREDITO' && (tx.cuotas > 1 || (tx.cuota_actual && tx.cuota_actual > 1));
 
-      if (tx.metodo_pago === 'CREDITO' && tx.cuotas > 1) {
-        cuotasCredito += tx.monto_cuota_mensual;
-        if (isCurrentMonth && !esPendiente) {
-          gastosEjecutadosReal += tx.monto_cuota_mensual;
-        } else if (esPendiente) {
-          gastosPendientesTotal += tx.monto_cuota_mensual;
-          cuotasCreditoPendientes += tx.monto_cuota_mensual;
+      if (isCreditInstallment) {
+        const activeInst = getActiveInstallmentForMonth(tx, new Date());
+        if (activeInst) {
+          cuotasCredito += activeInst.montoCuota;
+          if (isCurrentMonth && !esPendiente) {
+            gastosEjecutadosReal += activeInst.montoCuota;
+          } else {
+            gastosPendientesTotal += activeInst.montoCuota;
+            cuotasCreditoPendientes += activeInst.montoCuota;
+          }
         }
       } else {
         // Variable non-fixed expense (e.g. supermarket, dining out)
@@ -950,9 +956,61 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
   };
 
   const handleUpdateTransaction = (id: string, updatedFields: Partial<TransactionRecord>) => {
-    const updated = sortTransactionsByDateDesc(
-      transactions.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))
-    );
+    const existing = transactions.find((t) => t.id === id);
+    let updated: TransactionRecord[];
+
+    if (!existing && updatedFields.estado_pago === 'PAGADO') {
+      // If updating a virtual recurring item for the current month that was derived from a previous month
+      const todayISO = new Date().toISOString().split('T')[0];
+      const defaultItem: TransactionItem = {
+        concepto: updatedFields.titulo_resumen || 'Pago de Gasto Fijo',
+        monto: updatedFields.monto_total || 0,
+        categoria_principal: 'Servicios y Gastos Fijos',
+        subcategoria: 'Servicios Básicos',
+      };
+      const newPaidTx: TransactionRecord = {
+        id: `tx-fixed-paid-${Date.now()}`,
+        fecha: todayISO,
+        tipo_operacion: 'GASTO',
+        monto_total: updatedFields.monto_total || 0,
+        metodo_pago: updatedFields.metodo_pago || 'DEBITO',
+        cuotas: 1,
+        monto_cuota_mensual: updatedFields.monto_total || 0,
+        items: updatedFields.items && updatedFields.items.length > 0 ? updatedFields.items : [defaultItem],
+        alerta_ahorro_comprometido: false,
+        dinero_libre_restante: 0,
+        mensaje_usuario: 'Pago de servicio recurrente mensual registrado.',
+        titulo_resumen: updatedFields.titulo_resumen,
+        comercio: updatedFields.comercio,
+        entidad_financiera: updatedFields.entidad_financiera,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL',
+        estado_pago: 'PAGADO',
+        dia_pago_mensual: updatedFields.dia_pago_mensual,
+      };
+      updated = sortTransactionsByDateDesc([newPaidTx, ...transactions]);
+    } else {
+      const currentMonthKey = new Date().toISOString().slice(0, 7);
+      const isExistingInCurrentMonth = existing && normalizeDateToISO(existing.fecha).startsWith(currentMonthKey);
+
+      // If marking as PAGADO an existing previous month transaction, create a current month payment entry
+      if (existing && updatedFields.estado_pago === 'PAGADO' && !isExistingInCurrentMonth) {
+        const todayISO = new Date().toISOString().split('T')[0];
+        const newPaidTx: TransactionRecord = {
+          ...existing,
+          id: `tx-fixed-paid-${Date.now()}`,
+          fecha: todayISO,
+          estado_pago: 'PAGADO',
+          ...updatedFields,
+        };
+        updated = sortTransactionsByDateDesc([newPaidTx, ...transactions]);
+      } else {
+        updated = sortTransactionsByDateDesc(
+          transactions.map((t) => (t.id === id ? { ...t, ...updatedFields } : t))
+        );
+      }
+    }
+
     setTransactions(updated);
     if (lastTransaction?.id === id) {
       setLastTransaction((prev) => (prev ? { ...prev, ...updatedFields } : null));

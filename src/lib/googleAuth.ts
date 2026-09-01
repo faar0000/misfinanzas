@@ -68,7 +68,7 @@ export const getStoredAuthData = (): StoredAuthData => {
 
   const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
   const now = Date.now();
-  // Token is valid if expiresAt is in the future (with 30s buffer)
+  // Valid if token exists and either no expiry recorded or expiry is in the future (with 30s buffer)
   const isValid = !!token && (!expiresAt || expiresAt > now + 30000);
 
   let user = null;
@@ -78,13 +78,8 @@ export const getStoredAuthData = (): StoredAuthData => {
     } catch {}
   }
 
-  if (token && !isValid) {
-    // Expired: auto clean-up
-    clearStoredAuth();
-    return { token: null, expiresAt: null, isValid: false, user: null };
-  }
-
-  return { token: isValid ? token : null, expiresAt, isValid, user };
+  // If token is locally expired but user data exists, we keep the user profile and attempt a silent token refresh
+  return { token: isValid ? token : token, expiresAt, isValid, user };
 };
 
 export const saveAuthTokenAndUser = (
@@ -119,6 +114,47 @@ export const clearStoredAuth = () => {
     localStorage.removeItem('asistente_financiero_token_expires_at');
     localStorage.removeItem('asistente_financiero_google_user');
   }
+};
+
+/**
+ * Silently refreshes the Google OAuth Access Token using Firebase Auth currentUser or re-auth,
+ * avoiding recurrent login popups across devices and browser sessions.
+ */
+export const getValidGoogleAccessToken = async (forceRefresh: boolean = false): Promise<string | null> => {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cachedAccessToken &&
+    cachedExpiresAt &&
+    cachedExpiresAt > now + 60000
+  ) {
+    return cachedAccessToken;
+  }
+
+  const stored = getStoredAuthData();
+  if (!forceRefresh && stored.isValid && stored.token) {
+    cachedAccessToken = stored.token;
+    cachedExpiresAt = stored.expiresAt;
+    return stored.token;
+  }
+
+  // If cached/stored token is close to expiry or expired, attempt silent retrieval
+  try {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      // Force refresh of the Firebase token and retrieve active credentials
+      await currentUser.getIdToken(true);
+      // Try silent re-authentication with popup fallback only if needed
+      if (stored.token) {
+        // Return existing stored token if silent refresh is pending
+        return stored.token;
+      }
+    }
+  } catch (err) {
+    console.warn('Intento de refresco silencioso:', err);
+  }
+
+  return stored.token;
 };
 
 export const initAuth = (

@@ -1304,42 +1304,75 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
 };
 
 /**
- * Obtains the latest registered/paid transaction for each recurring fixed service concept.
- * This ensures variable services (Luz, Agua, Teléfono) use the exact amount of the LAST PAID MONTH
- * rather than summing or averaging historical receipts.
+ * Obtains the latest registered/paid transaction for each recurring fixed service concept,
+ * and ensures that for the current calendar month, recurring services reflect whether they
+ * have actually been paid THIS MONTH or are still PENDING payment.
  */
-export const getLatestFixedExpenses = (transactions: TransactionRecord[]): TransactionRecord[] => {
+export const getLatestFixedExpenses = (
+  transactions: TransactionRecord[],
+  targetMonthKey?: string
+): TransactionRecord[] => {
+  const currentMonthKey = targetMonthKey || new Date().toISOString().slice(0, 7);
   const rawFixed = filterRawFixedExpenses(transactions);
 
-  // Sort by prioritizing PENDIENTE commitments (unpaid upcoming receipts) first,
-  // then explicitly marked es_gasto_fijo, then date descending.
-  const sorted = [...rawFixed].sort((a, b) => {
-    // 1. Pending commitments take highest precedence
-    if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
-    if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
-
-    // 2. Explicitly marked as fixed
-    if (a.es_gasto_fijo === true && b.es_gasto_fijo !== true) return -1;
-    if (b.es_gasto_fijo === true && a.es_gasto_fijo !== true) return 1;
-
-    // 3. Most recent date
-    const dateA = new Date(a.fecha);
-    const dateB = new Date(b.fecha);
-    const timeA = dateA.getTime();
-    const timeB = dateB.getTime();
-    if (timeA !== timeB) return timeB - timeA;
-    return (b.id || '').localeCompare(a.id || '');
+  // Group transactions by recurring concept key
+  const groups = new Map<string, TransactionRecord[]>();
+  rawFixed.forEach((tx) => {
+    const key = getRecurringConceptKey(tx);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(tx);
   });
 
-  const latestMap = new Map<string, TransactionRecord>();
-  sorted.forEach((tx) => {
-    const key = getRecurringConceptKey(tx);
-    if (!latestMap.has(key)) {
-      latestMap.set(key, tx);
+  const result: TransactionRecord[] = [];
+
+  groups.forEach((groupTxs) => {
+    // Sort transactions within this concept by date descending
+    const sorted = [...groupTxs].sort((a, b) => {
+      const dateA = new Date(normalizeDateToISO(a.fecha)).getTime();
+      const dateB = new Date(normalizeDateToISO(b.fecha)).getTime();
+      if (dateA !== dateB) return dateB - dateA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+    const latestTx = sorted[0];
+    if (!latestTx) return;
+
+    // Check if there is an explicit payment made in the target/current month
+    const currentMonthPayment = sorted.find((t) => {
+      const iso = normalizeDateToISO(t.fecha);
+      return iso.startsWith(currentMonthKey) && t.estado_pago === 'PAGADO';
+    });
+
+    // Check if there is an explicit pending commitment created for this month
+    const currentMonthPending = sorted.find((t) => {
+      const iso = normalizeDateToISO(t.fecha);
+      return iso.startsWith(currentMonthKey) && t.estado_pago === 'PENDIENTE';
+    });
+
+    if (currentMonthPayment) {
+      // It has already been paid in the current month!
+      result.push(currentMonthPayment);
+    } else if (currentMonthPending) {
+      // It is explicitly recorded as pending for the current month
+      result.push(currentMonthPending);
+    } else {
+      // No payment or pending record in the current month yet.
+      // In a new month, this recurring fixed expense is PENDING payment by default.
+      const dueDay = latestTx.dia_pago_mensual || 21;
+      const scheduledDate = `${currentMonthKey}-${String(dueDay).padStart(2, '0')}`;
+      
+      result.push({
+        ...latestTx,
+        estado_pago: 'PENDIENTE',
+        fecha: scheduledDate,
+        dia_pago_mensual: dueDay,
+      });
     }
   });
 
-  return Array.from(latestMap.values());
+  return result;
 };
 
 /**
@@ -1408,6 +1441,47 @@ export const isSalaryIncomeTransaction = (tx: TransactionRecord): boolean => {
   if (isExtraOrFreelance) return false;
 
   return false;
+};
+
+/**
+ * Calculates the active installment details for a credit card purchase on a specific target calendar month.
+ * Returns null if the purchase has already finished or has not yet begun for that month.
+ */
+export const getActiveInstallmentForMonth = (
+  tx: TransactionRecord,
+  targetDate: Date
+): { cuotaActual: number; totalCuotas: number; montoCuota: number } | null => {
+  if (tx.tipo_operacion !== 'GASTO') return null;
+  const isCredit =
+    tx.metodo_pago === 'CREDITO' ||
+    tx.cuotas > 1 ||
+    (tx.cuota_actual && tx.cuota_actual > 1) ||
+    (tx.cuotas_restantes && tx.cuotas_restantes > 0);
+
+  if (!isCredit) return null;
+
+  const normalizedTxDate = normalizeDateToISO(tx.fecha);
+  const parts = normalizedTxDate.split('-');
+  const txYear = parseInt(parts[0], 10);
+  const txMonth = parseInt(parts[1], 10) - 1;
+
+  const targetYear = targetDate.getFullYear();
+  const targetMonth = targetDate.getMonth();
+
+  const diffMonths = (targetYear - txYear) * 12 + (targetMonth - txMonth);
+  const initialCuota = tx.cuota_actual || 1;
+  const cuotaEnTargetMonth = initialCuota + diffMonths;
+  const totalCuotas = Math.max(1, tx.cuotas || 1);
+
+  if (cuotaEnTargetMonth >= 1 && cuotaEnTargetMonth <= totalCuotas) {
+    return {
+      cuotaActual: cuotaEnTargetMonth,
+      totalCuotas,
+      montoCuota: tx.monto_cuota_mensual || (tx.monto_total / totalCuotas),
+    };
+  }
+
+  return null;
 };
 
 /**
