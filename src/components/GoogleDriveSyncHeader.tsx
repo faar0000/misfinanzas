@@ -7,10 +7,12 @@ interface GoogleDriveSyncHeaderProps {
   isSyncing: boolean;
   lastSyncedAt: string | null;
   spreadsheetUrl: string | null;
+  tokenNeedsRefresh?: boolean;
   onLogin: () => void;
   onLogout: () => void;
   onManualSync: () => void;
   onImportDrive?: () => void;
+  onReconnect?: () => void;
 }
 
 export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
@@ -18,10 +20,12 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
   isSyncing,
   lastSyncedAt,
   spreadsheetUrl,
+  tokenNeedsRefresh = false,
   onLogin,
   onLogout,
   onManualSync,
   onImportDrive,
+  onReconnect,
 }) => {
   if (!user) {
     return (
@@ -57,22 +61,28 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
   }
 
   return (
-    <div className="bg-slate-900 text-white p-2.5 sm:p-3 rounded-md border border-emerald-900/60 flex flex-col sm:flex-row items-center justify-between gap-2.5 mb-4 shadow-2xs">
+    <div className={`bg-slate-900 text-white p-2.5 sm:p-3 rounded-md border ${tokenNeedsRefresh ? 'border-amber-700/80 bg-slate-900/95' : 'border-emerald-900/60'} flex flex-col sm:flex-row items-center justify-between gap-2.5 mb-4 shadow-2xs`}>
       {/* Drive Status Info */}
       <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-start">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 bg-emerald-950 rounded-md flex items-center justify-center shrink-0 border border-emerald-800/80">
-            <CloudCheck className="w-4 h-4 text-emerald-400" />
+          <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border ${tokenNeedsRefresh ? 'bg-amber-950/80 border-amber-700/80' : 'bg-emerald-950 border-emerald-800/80'}`}>
+            <CloudCheck className={`w-4 h-4 ${tokenNeedsRefresh ? 'text-amber-400' : 'text-emerald-400'}`} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider truncate">
-                Drive Conectado
+              <span className={`w-2 h-2 rounded-full shrink-0 ${tokenNeedsRefresh ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+              <span className={`text-xs font-bold uppercase tracking-wider truncate ${tokenNeedsRefresh ? 'text-amber-300' : 'text-emerald-300'}`}>
+                {tokenNeedsRefresh ? 'Sesión por renovar' : 'Drive Conectado'}
               </span>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 rounded-sm">
-                ⚡ Autoguardado Activo
-              </span>
+              {tokenNeedsRefresh ? (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-950/90 text-amber-300 border border-amber-700/60 rounded-sm">
+                  ⚠️ Clic para Reconectar
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 rounded-sm">
+                  ⚡ Autoguardado Activo
+                </span>
+              )}
               <span className="text-[10px] text-slate-400 font-mono truncate hidden md:inline">
                 ({user.email || user.displayName})
               </span>
@@ -81,8 +91,10 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
               {isSyncing ? (
                 <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
                   <RefreshCw className="w-3 h-3 animate-spin inline shrink-0" />
-                  <span>Guardando automáticamente en Drive...</span>
+                  <span>Guardando en Drive...</span>
                 </span>
+              ) : tokenNeedsRefresh ? (
+                <span className="text-amber-300/90">Haz clic en Reconectar o Guardar para autorizar la sincronización</span>
               ) : lastSyncedAt ? (
                 <span>Guardado automático al día • Último: {lastSyncedAt}</span>
               ) : (
@@ -104,6 +116,17 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
 
       {/* Action Buttons (Compact & Responsive) */}
       <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
+        {tokenNeedsRefresh && (
+          <button
+            onClick={onReconnect || onLogin}
+            className="flex-1 sm:flex-initial px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-bold rounded border border-amber-400 transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
+            title="Haz clic para renovar los permisos de Google Drive"
+          >
+            <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+            <span>Reconectar</span>
+          </button>
+        )}
+
         {onImportDrive && (
           <button
             onClick={onImportDrive}

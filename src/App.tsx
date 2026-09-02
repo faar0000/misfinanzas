@@ -201,7 +201,16 @@ const SAMPLE_TRANSACTIONS: TransactionRecord[] = [
 
 const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => {
   if (!Array.isArray(txs)) return [];
-  return txs.map((tx) => {
+  const seenIds = new Set<string>();
+
+  return txs.map((tx, idx) => {
+    // Guarantee every transaction has a distinct, valid ID (handles duplicates from Sheets or imports)
+    let uniqueId = tx.id && typeof tx.id === 'string' && tx.id.trim() !== '' ? tx.id.trim() : `tx-${Date.now()}-${idx}`;
+    if (seenIds.has(uniqueId)) {
+      uniqueId = `${uniqueId}-dup-${idx}`;
+    }
+    seenIds.add(uniqueId);
+
     // 1. Strictly normalize date into ISO format (YYYY-MM-DD)
     const normalizedFecha = normalizeDateToISO(tx.fecha);
 
@@ -246,6 +255,7 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
     if (tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && isRecurringKeyword && (tx.cuotas <= 1 || !tx.cuotas)) {
       return {
         ...tx,
+        id: uniqueId,
         fecha: normalizedFecha,
         es_gasto_fijo: true,
         frecuencia_recurrencia: 'MENSUAL' as const,
@@ -253,6 +263,7 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
     }
     return {
       ...tx,
+      id: uniqueId,
       fecha: normalizedFecha,
     };
   });
@@ -357,6 +368,7 @@ export default function App() {
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(() => {
     return localStorage.getItem('asistente_financiero_sheet_id');
   });
+  const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false);
 
   // Automatic saving tracking refs to ensure seamless background sync on each record
   const isInitialMountRef = useRef(true);
@@ -410,12 +422,14 @@ export default function App() {
             const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             setLastDriveSyncedAt(nowFormatted);
             localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
+            setTokenNeedsRefresh(false);
 
             alert(`✅ ¡Google Drive conectado! Se recuperaron ${sorted.length} transacciones sincronizadas previamente.`);
             return;
           }
         }
 
+        setTokenNeedsRefresh(false);
         // If new or empty sheet, push local transactions to Drive
         triggerDriveSync(res.accessToken, transactions);
       }
@@ -442,13 +456,14 @@ export default function App() {
 
     let activeToken = tokenToUse || (await getValidGoogleAccessToken()) || accessToken;
     if (!activeToken && googleUser) {
-      activeToken = (await requestGisTokenSilently(googleUser.email)) || (await refreshGoogleTokenInteractive(googleUser.email));
+      activeToken = await refreshGoogleTokenInteractive(googleUser.email);
       if (activeToken) setAccessToken(activeToken);
     }
     if (!activeToken) {
       await handleGoogleLogin();
       return;
     }
+    setTokenNeedsRefresh(false);
 
     setIsDriveSyncing(true);
     try {
@@ -524,19 +539,18 @@ export default function App() {
 
     let activeToken = tokenToUse || (await getValidGoogleAccessToken()) || accessToken;
 
-    // If activeToken expired or missing, but user is logged in
     if (!activeToken && googleUser) {
       if (isManual) {
-        activeToken = (await requestGisTokenSilently(googleUser.email)) || (await refreshGoogleTokenInteractive(googleUser.email));
-      } else {
-        activeToken = await requestGisTokenSilently(googleUser.email);
+        activeToken = await refreshGoogleTokenInteractive(googleUser.email);
+        if (activeToken) setAccessToken(activeToken);
       }
-      if (activeToken) setAccessToken(activeToken);
     }
 
     if (!activeToken) {
       if (isManual) {
         await handleGoogleLogin();
+      } else {
+        setTokenNeedsRefresh(true);
       }
       return;
     }
@@ -567,6 +581,7 @@ export default function App() {
       const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setLastDriveSyncedAt(nowFormatted);
       localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
+      setTokenNeedsRefresh(false);
 
       if (isManual) {
         alert(`✅ Sincronización exitosa con Google Drive a las ${nowFormatted}`);
@@ -577,40 +592,9 @@ export default function App() {
       const isAuthError = msg.includes('401') || msg.includes('UNAUTHENTICATED') || msg.includes('authentication credentials');
 
       if (isAuthError) {
-        // Token has expired! Do NOT disconnect the user. Attempt instant refresh + retry
-        console.log('Token de Drive expirado. Intentando autorrefresco...');
-        const freshToken = isManual
-          ? ((await requestGisTokenSilently(googleUser?.email)) || (await refreshGoogleTokenInteractive(googleUser?.email)))
-          : (await requestGisTokenSilently(googleUser?.email));
-
-        if (freshToken) {
-          setAccessToken(freshToken);
-          let sheetId = spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id');
-          if (sheetId) {
-            try {
-              await syncDataToGoogleSheets(
-                freshToken,
-                sheetId,
-                txsToSync,
-                budgetSummary,
-                config.monedaSimbolo,
-                { config, categoryBudgets }
-              );
-              const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-              setLastDriveSyncedAt(nowFormatted);
-              localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
-              if (isManual) {
-                alert(`✅ Sincronización exitosa con Google Drive a las ${nowFormatted}`);
-              }
-              return;
-            } catch (retryErr) {
-              console.warn('Error en reintento tras autorrefresco:', retryErr);
-            }
-          }
-        }
-
+        setTokenNeedsRefresh(true);
         if (isManual) {
-          alert('Tu sesión de Google requirió renovación. Haz clic en Conectar para renovar con 1 solo clic.');
+          alert('Tu sesión de Google expiró. Se abrirá la ventana para renovarla.');
           await handleGoogleLogin();
         }
       } else if (isManual) {
@@ -1019,7 +1003,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
 
       // Build complete TransactionRecord
       const newRecord: TransactionRecord = {
-        id: `tx-${Date.now()}`,
+        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
         fecha: validFecha,
         tipo_operacion: parsedData.tipo_operacion || 'GASTO',
         monto_total: parsedData.monto_total || 0,
@@ -1087,14 +1071,26 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
   };
 
   const handleDeleteTransaction = (id: string) => {
-    const updated = transactions.filter((t) => t.id !== id);
+    // Delete ONLY the single targeted item by index, preventing accidental bulk removal if two records share an ID
+    const targetIndex = transactions.findIndex((t) => t.id === id);
+    if (targetIndex === -1) return;
+    const updated = [
+      ...transactions.slice(0, targetIndex),
+      ...transactions.slice(targetIndex + 1),
+    ];
     setTransactions(updated);
     if (lastTransaction?.id === id) {
       setLastTransaction(null);
     }
-    const token = accessToken || localStorage.getItem('asistente_financiero_google_token');
-    if (token) {
-      triggerDriveSync(token, updated);
+    const hasDriveConnection = Boolean(
+      googleUser ||
+      accessToken ||
+      spreadsheetId ||
+      localStorage.getItem('asistente_financiero_sheet_id') ||
+      localStorage.getItem('asistente_financiero_google_token')
+    );
+    if (hasDriveConnection) {
+      triggerDriveSync(accessToken, updated, false);
     }
   };
 
@@ -1312,10 +1308,12 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
             isSyncing={isDriveSyncing}
             lastSyncedAt={lastDriveSyncedAt}
             spreadsheetUrl={spreadsheetUrl}
+            tokenNeedsRefresh={tokenNeedsRefresh}
             onLogin={handleGoogleLogin}
             onLogout={handleGoogleLogout}
             onManualSync={() => triggerDriveSync(null, undefined, true)}
             onImportDrive={() => handleImportFromDrive()}
+            onReconnect={handleGoogleLogin}
           />
         </div>
 

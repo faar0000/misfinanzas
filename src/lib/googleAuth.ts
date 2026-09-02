@@ -124,50 +124,18 @@ export const clearStoredAuth = () => {
 };
 
 /**
- * Attempts to request a fresh Google OAuth access token silently using Google Identity Services (GIS)
- * with prompt: '' and login hint so that no popup is shown to the user.
+ * Google Identity Services (GIS) TokenClient does not support silent iframe authentication
+ * without user interaction. Calling requestAccessToken() without a direct user click causes
+ * browsers to block the popup window with "[GSI_LOGGER]: Failed to open popup window".
+ * To avoid blocked popup errors, background silent requests return null safely without opening windows.
  */
-export const requestGisTokenSilently = async (userEmail?: string): Promise<string | null> => {
-  if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
-    return null;
-  }
-  const clientId = rawFirebaseConfig.oAuthClientId;
-  if (!clientId) return null;
-
-  return new Promise((resolve) => {
-    try {
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SCOPES.join(' '),
-        hint: userEmail || undefined,
-        prompt: '', // Silent! No popup or consent screen if already authorized
-        callback: (response: any) => {
-          if (response && response.access_token) {
-            const expiresIn = response.expires_in ? parseInt(response.expires_in, 10) : 3550;
-            saveAuthTokenAndUser(response.access_token, null, expiresIn);
-            resolve(response.access_token);
-          } else {
-            resolve(null);
-          }
-        },
-        error_callback: (err: any) => {
-          console.log('Silent GIS request unavailable without interaction:', err?.type || err);
-          resolve(null);
-        },
-      });
-
-      client.requestAccessToken({ prompt: '' });
-      // Safety timeout in case callback doesn't fire
-      setTimeout(() => resolve(null), 3500);
-    } catch (e) {
-      console.warn('GIS silent request exception:', e);
-      resolve(null);
-    }
-  });
+export const requestGisTokenSilently = async (_userEmail?: string): Promise<string | null> => {
+  return null;
 };
 
 /**
  * Refreshes the Google OAuth token interactively with a 1-click popup pre-selecting the user's account.
+ * MUST only be invoked from an explicit user click handler.
  */
 export const refreshGoogleTokenInteractive = async (userEmail?: string): Promise<string | null> => {
   try {
@@ -189,15 +157,12 @@ export const refreshGoogleTokenInteractive = async (userEmail?: string): Promise
 };
 
 /**
- * Retrieves a valid Google OAuth access token.
- * 1. Checks memory cache and localStorage.
- * 2. If expired, attempts silent GIS background renewal without user prompts.
- * 3. Falls back to existing token if still available.
+ * Retrieves the current Google OAuth access token from memory or storage.
+ * Does NOT open unprompted popups in the background.
  */
-export const getValidGoogleAccessToken = async (forceRefresh: boolean = false): Promise<string | null> => {
+export const getValidGoogleAccessToken = async (_forceRefresh: boolean = false): Promise<string | null> => {
   const now = Date.now();
   if (
-    !forceRefresh &&
     cachedAccessToken &&
     cachedExpiresAt &&
     cachedExpiresAt > now + 60000
@@ -206,25 +171,13 @@ export const getValidGoogleAccessToken = async (forceRefresh: boolean = false): 
   }
 
   const stored = getStoredAuthData();
-  if (!forceRefresh && stored.isValid && stored.token) {
+  if (stored.token) {
     cachedAccessToken = stored.token;
-    cachedExpiresAt = stored.expiresAt;
+    if (stored.expiresAt) cachedExpiresAt = stored.expiresAt;
     return stored.token;
   }
 
-  // Token is expired or forceRefresh requested: try silent renewal via GIS
-  try {
-    const userEmail = stored.user?.email || auth.currentUser?.email || undefined;
-    const silentToken = await requestGisTokenSilently(userEmail);
-    if (silentToken) {
-      return silentToken;
-    }
-  } catch (err) {
-    console.warn('Silent token renewal attempt:', err);
-  }
-
-  // Fallback to stored token if available
-  return stored.token || cachedAccessToken;
+  return cachedAccessToken;
 };
 
 export const initAuth = (
@@ -245,15 +198,6 @@ export const initAuth = (
       }
       if (onAuthSuccess) {
         onAuthSuccess(stored.user as any, stored.token || '');
-      }
-
-      // If token has expired overnight, attempt silent renewal in background
-      if (!stored.isValid) {
-        getValidGoogleAccessToken(true).then((freshToken) => {
-          if (freshToken && onAuthSuccess) {
-            onAuthSuccess(stored.user as any, freshToken);
-          }
-        }).catch(() => {});
       }
     }
   }
@@ -279,15 +223,6 @@ export const initAuth = (
       const activeToken = stored.token || cachedAccessToken || '';
       saveAuthTokenAndUser(activeToken || null, user);
       if (onAuthSuccess) onAuthSuccess(user, activeToken);
-
-      // Attempt silent refresh if token is expired
-      if (!stored.isValid) {
-        getValidGoogleAccessToken(true).then((freshToken) => {
-          if (freshToken && onAuthSuccess) {
-            onAuthSuccess(user, freshToken);
-          }
-        }).catch(() => {});
-      }
     } else if (stored.user) {
       // User is remembered locally even if Firebase auth is initializing
       if (onAuthSuccess) onAuthSuccess(stored.user as any, stored.token || '');
