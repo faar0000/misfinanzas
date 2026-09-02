@@ -14,6 +14,12 @@ import {
 } from 'firebase/auth';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
 const metaEnv = (import.meta as any).env || {};
 
 const firebaseConfig = {
@@ -28,7 +34,7 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use localStorage or memory persistence to avoid IndexedDB "Database is closing/hidden" errors in iframes/popups
+// Use localStorage persistence so sessions survive between days and browser restarts
 if (typeof window !== 'undefined') {
   setPersistence(auth, browserLocalPersistence).catch(() => {
     setPersistence(auth, inMemoryPersistence).catch(() => {});
@@ -68,7 +74,7 @@ export const getStoredAuthData = (): StoredAuthData => {
 
   const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
   const now = Date.now();
-  // Valid if token exists and either no expiry recorded or expiry is in the future (with 30s buffer)
+  // Token is considered valid if expiresAt is in the future (with 30s buffer)
   const isValid = !!token && (!expiresAt || expiresAt > now + 30000);
 
   let user = null;
@@ -78,22 +84,23 @@ export const getStoredAuthData = (): StoredAuthData => {
     } catch {}
   }
 
-  // If token is locally expired but user data exists, we keep the user profile and attempt a silent token refresh
   return { token: isValid ? token : token, expiresAt, isValid, user };
 };
 
 export const saveAuthTokenAndUser = (
-  token: string,
+  token?: string | null,
   user?: User | { email: string | null; displayName: string | null; photoURL: string | null; uid: string } | null,
   expiresInSeconds: number = 3550
 ) => {
   if (typeof window === 'undefined') return;
-  const expiresAt = Date.now() + expiresInSeconds * 1000;
-  cachedAccessToken = token;
-  cachedExpiresAt = expiresAt;
 
-  localStorage.setItem('asistente_financiero_google_token', token);
-  localStorage.setItem('asistente_financiero_token_expires_at', expiresAt.toString());
+  if (token) {
+    const expiresAt = Date.now() + expiresInSeconds * 1000;
+    cachedAccessToken = token;
+    cachedExpiresAt = expiresAt;
+    localStorage.setItem('asistente_financiero_google_token', token);
+    localStorage.setItem('asistente_financiero_token_expires_at', expiresAt.toString());
+  }
 
   if (user) {
     const serializedUser = {
@@ -117,8 +124,75 @@ export const clearStoredAuth = () => {
 };
 
 /**
- * Silently refreshes the Google OAuth Access Token using Firebase Auth currentUser or re-auth,
- * avoiding recurrent login popups across devices and browser sessions.
+ * Attempts to request a fresh Google OAuth access token silently using Google Identity Services (GIS)
+ * with prompt: '' and login hint so that no popup is shown to the user.
+ */
+export const requestGisTokenSilently = async (userEmail?: string): Promise<string | null> => {
+  if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
+    return null;
+  }
+  const clientId = rawFirebaseConfig.oAuthClientId;
+  if (!clientId) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SCOPES.join(' '),
+        hint: userEmail || undefined,
+        prompt: '', // Silent! No popup or consent screen if already authorized
+        callback: (response: any) => {
+          if (response && response.access_token) {
+            const expiresIn = response.expires_in ? parseInt(response.expires_in, 10) : 3550;
+            saveAuthTokenAndUser(response.access_token, null, expiresIn);
+            resolve(response.access_token);
+          } else {
+            resolve(null);
+          }
+        },
+        error_callback: (err: any) => {
+          console.log('Silent GIS request unavailable without interaction:', err?.type || err);
+          resolve(null);
+        },
+      });
+
+      client.requestAccessToken({ prompt: '' });
+      // Safety timeout in case callback doesn't fire
+      setTimeout(() => resolve(null), 3500);
+    } catch (e) {
+      console.warn('GIS silent request exception:', e);
+      resolve(null);
+    }
+  });
+};
+
+/**
+ * Refreshes the Google OAuth token interactively with a 1-click popup pre-selecting the user's account.
+ */
+export const refreshGoogleTokenInteractive = async (userEmail?: string): Promise<string | null> => {
+  try {
+    const stored = getStoredAuthData();
+    const email = userEmail || stored.user?.email || undefined;
+    if (email) {
+      provider.setCustomParameters({ login_hint: email });
+    }
+    const res = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(res);
+    if (credential?.accessToken) {
+      saveAuthTokenAndUser(credential.accessToken, res.user);
+      return credential.accessToken;
+    }
+  } catch (err: any) {
+    console.warn('Interactive token renewal cancelled or error:', err);
+  }
+  return null;
+};
+
+/**
+ * Retrieves a valid Google OAuth access token.
+ * 1. Checks memory cache and localStorage.
+ * 2. If expired, attempts silent GIS background renewal without user prompts.
+ * 3. Falls back to existing token if still available.
  */
 export const getValidGoogleAccessToken = async (forceRefresh: boolean = false): Promise<string | null> => {
   const now = Date.now();
@@ -138,23 +212,19 @@ export const getValidGoogleAccessToken = async (forceRefresh: boolean = false): 
     return stored.token;
   }
 
-  // If cached/stored token is close to expiry or expired, attempt silent retrieval
+  // Token is expired or forceRefresh requested: try silent renewal via GIS
   try {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      // Force refresh of the Firebase token and retrieve active credentials
-      await currentUser.getIdToken(true);
-      // Try silent re-authentication with popup fallback only if needed
-      if (stored.token) {
-        // Return existing stored token if silent refresh is pending
-        return stored.token;
-      }
+    const userEmail = stored.user?.email || auth.currentUser?.email || undefined;
+    const silentToken = await requestGisTokenSilently(userEmail);
+    if (silentToken) {
+      return silentToken;
     }
   } catch (err) {
-    console.warn('Intento de refresco silencioso:', err);
+    console.warn('Silent token renewal attempt:', err);
   }
 
-  return stored.token;
+  // Fallback to stored token if available
+  return stored.token || cachedAccessToken;
 };
 
 export const initAuth = (
@@ -166,18 +236,29 @@ export const initAuth = (
       setPersistence(auth, inMemoryPersistence).catch(() => {});
     });
 
-    // Immediate hydration from localStorage if token is still valid and not expired
+    // Immediate hydration from localStorage: preserve user identity across days!
     const stored = getStoredAuthData();
-    if (stored.isValid && stored.token) {
-      cachedAccessToken = stored.token;
-      cachedExpiresAt = stored.expiresAt;
-      if (onAuthSuccess && stored.user) {
-        onAuthSuccess(stored.user as any, stored.token);
+    if (stored.user) {
+      if (stored.token) {
+        cachedAccessToken = stored.token;
+        cachedExpiresAt = stored.expiresAt;
+      }
+      if (onAuthSuccess) {
+        onAuthSuccess(stored.user as any, stored.token || '');
+      }
+
+      // If token has expired overnight, attempt silent renewal in background
+      if (!stored.isValid) {
+        getValidGoogleAccessToken(true).then((freshToken) => {
+          if (freshToken && onAuthSuccess) {
+            onAuthSuccess(stored.user as any, freshToken);
+          }
+        }).catch(() => {});
       }
     }
   }
 
-  // Catch redirect authentication results on load (for mobile or popups fallback)
+  // Catch redirect authentication results on load (for mobile fallback)
   getRedirectResult(auth)
     .then((result) => {
       if (result) {
@@ -194,12 +275,23 @@ export const initAuth = (
 
   return onAuthStateChanged(auth, async (user: User | null) => {
     const stored = getStoredAuthData();
-    if (user && stored.isValid && stored.token) {
-      saveAuthTokenAndUser(stored.token, user);
-      if (onAuthSuccess) onAuthSuccess(user, stored.token);
-    } else if (user && !stored.token) {
-      if (onAuthFailure) onAuthFailure();
-    } else if (!user && !stored.isValid) {
+    if (user) {
+      const activeToken = stored.token || cachedAccessToken || '';
+      saveAuthTokenAndUser(activeToken || null, user);
+      if (onAuthSuccess) onAuthSuccess(user, activeToken);
+
+      // Attempt silent refresh if token is expired
+      if (!stored.isValid) {
+        getValidGoogleAccessToken(true).then((freshToken) => {
+          if (freshToken && onAuthSuccess) {
+            onAuthSuccess(user, freshToken);
+          }
+        }).catch(() => {});
+      }
+    } else if (stored.user) {
+      // User is remembered locally even if Firebase auth is initializing
+      if (onAuthSuccess) onAuthSuccess(stored.user as any, stored.token || '');
+    } else {
       clearStoredAuth();
       if (onAuthFailure) onAuthFailure();
     }
@@ -207,11 +299,15 @@ export const initAuth = (
 };
 
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
-  // Enforce browserLocalPersistence or inMemoryPersistence to bypass IndexedDB connection closing bugs
   try {
     await setPersistence(auth, browserLocalPersistence);
   } catch {
     await setPersistence(auth, inMemoryPersistence).catch(() => {});
+  }
+
+  const stored = getStoredAuthData();
+  if (stored.user?.email) {
+    provider.setCustomParameters({ login_hint: stored.user.email });
   }
 
   const runPopup = async () => {
@@ -236,7 +332,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       error?.code === 'auth/internal-error';
 
     if (isDbClosing) {
-      console.warn('Se detectó cierre de conexión IndexedDB ("Database is closing/hidden"). Reintentando con inMemoryPersistence...');
+      console.warn('Detectado IndexedDB cerrado. Reintentando con inMemoryPersistence...');
       try {
         await setPersistence(auth, inMemoryPersistence);
         const retryData = await runPopup();
@@ -248,14 +344,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       }
     }
 
-    const currentErrorMsg = String(error?.message || error?.code || error || '');
-
     if (
       error?.code === 'auth/unauthorized-domain' ||
       error?.code === 'auth/popup-blocked' ||
       error?.code === 'auth/popup-closed-by-user' ||
       error?.code === 'auth/cancelled-popup-request' ||
-      currentErrorMsg.includes('popup')
+      errorMsg.includes('popup')
     ) {
       if (error?.code === 'auth/unauthorized-domain') {
         const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'tu-app.vercel.app';
@@ -291,12 +385,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  const stored = getStoredAuthData();
-  return stored.isValid ? stored.token : null;
+  return getValidGoogleAccessToken();
 };
 
 export const logoutGoogle = async () => {
   await signOut(auth);
   clearStoredAuth();
 };
+
 

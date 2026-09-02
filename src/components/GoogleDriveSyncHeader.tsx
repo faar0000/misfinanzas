@@ -70,14 +70,24 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
               <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider truncate">
                 Drive Conectado
               </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 rounded-sm">
+                ⚡ Autoguardado Activo
+              </span>
               <span className="text-[10px] text-slate-400 font-mono truncate hidden md:inline">
                 ({user.email || user.displayName})
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-              {lastSyncedAt
-                ? `Sincronizado: ${lastSyncedAt}`
-                : 'Sincronización activa'}
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1">
+              {isSyncing ? (
+                <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                  <RefreshCw className="w-3 h-3 animate-spin inline shrink-0" />
+                  <span>Guardando automáticamente en Drive...</span>
+                </span>
+              ) : lastSyncedAt ? (
+                <span>Guardado automático al día • Último: {lastSyncedAt}</span>
+              ) : (
+                <span>Autoguardado automático activo</span>
+              )}
             </p>
           </div>
         </div>
@@ -110,10 +120,10 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
           onClick={onManualSync}
           disabled={isSyncing}
           className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white text-xs font-bold rounded border border-emerald-600 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs"
-          title="Guarda tus transacciones actuales en Google Drive"
+          title="Fuerza un guardado inmediato en Google Drive"
         >
           <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>{isSyncing ? 'Guardando...' : 'Guardar'}</span>
+          <span>{isSyncing ? 'Guardando...' : 'Guardar ahora'}</span>
         </button>
 
         {spreadsheetUrl && (
