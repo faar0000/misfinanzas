@@ -248,7 +248,6 @@ export async function readDataFromGoogleSheets(
             dinero_libre_restante,
             items,
             mensaje_usuario,
-            frecuencia_recurrencia: 'PUNTUAL',
           };
         });
     }
@@ -345,6 +344,19 @@ export async function syncDataToGoogleSheets(
   ]);
 
   const transaccionesValues = [headers, ...transactionRows];
+
+  // Clear 'Transacciones' sheet before writing to remove stale deleted rows
+  try {
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A1:Z:clear`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch {
+    // Ignore clear error if sheet was fresh
+  }
 
   // Update 'Transacciones' sheet
   const txUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A1?valueInputOption=USER_ENTERED`;

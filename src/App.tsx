@@ -33,6 +33,7 @@ import {
   getLatestFixedExpenses,
   getRecurringConceptKey,
   areSameRecurringConcept,
+  getTransactionDueDay,
   isUpcomingDueDateAlert,
   isSalaryIncomeTransaction,
   getActiveInstallmentForMonth,
@@ -203,7 +204,7 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
   if (!Array.isArray(txs)) return [];
   const seenIds = new Set<string>();
 
-  return txs.map((tx, idx) => {
+  const rawList = txs.map((tx, idx) => {
     // Guarantee every transaction has a distinct, valid ID (handles duplicates from Sheets or imports)
     let uniqueId = tx.id && typeof tx.id === 'string' && tx.id.trim() !== '' ? tx.id.trim() : `tx-${Date.now()}-${idx}`;
     if (seenIds.has(uniqueId)) {
@@ -214,59 +215,196 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
     // 1. Strictly normalize date into ISO format (YYYY-MM-DD)
     const normalizedFecha = normalizeDateToISO(tx.fecha);
 
-    // Heal orphaned pending recurring expenses:
-    // If a transaction is marked PENDIENTE and is a fixed service concept (internet, gas, alquiler, luz, etc.)
-    // but was degraded to PUNTUAL or es_gasto_fijo: false, restore its recurring fixed state.
-    const text = (
+    const titleAndConcept = (
+      (tx.titulo_resumen || '') +
+      ' ' +
+      (tx.items?.[0]?.concepto || '') +
+      ' ' +
+      (tx.items?.[0]?.subcategoria || '')
+    ).toLowerCase();
+
+    const fullText = (
       (tx.titulo_resumen || '') +
       ' ' +
       (tx.comercio || '') +
       ' ' +
-      (tx.items?.[0]?.concepto || '') +
-      ' ' +
-      (tx.items?.[0]?.subcategoria || '') +
-      ' ' +
-      (tx.items?.[0]?.categoria_principal || '')
+      (tx.items || []).map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
 
-    const isRecurringKeyword =
-      text.includes('internet') ||
-      text.includes('gas') ||
-      text.includes('calidda') ||
-      text.includes('cálidda') ||
-      text.includes('luz') ||
-      text.includes('agua') ||
-      text.includes('alquiler') ||
-      text.includes('cochera') ||
-      text.includes('paramount') ||
-      text.includes('netflix') ||
-      text.includes('spotify') ||
-      text.includes('suscripci') ||
-      text.includes('mantenimiento') ||
-      text.includes('colegio') ||
-      text.includes('universidad') ||
-      text.includes('pension') ||
-      text.includes('pensión') ||
-      text.includes('gym') ||
-      text.includes('gimnasio') ||
-      text.includes('seguro') ||
-      Boolean(tx.dia_pago_mensual);
+    // 2. CRITICAL PURGE: Detect food, groceries, vegetables, dining, plants, home decor, clothing, tools
+    // These must NEVER be recurring fixed expenses under any circumstance.
+    const isVariableOrCasualItem =
+      fullText.includes('camote') ||
+      fullText.includes('papa') ||
+      fullText.includes('verdura') ||
+      fullText.includes('fruta') ||
+      fullText.includes('carne') ||
+      fullText.includes('pollo') ||
+      fullText.includes('comida') ||
+      fullText.includes('almuerzo') ||
+      fullText.includes('cena') ||
+      fullText.includes('menu') ||
+      fullText.includes('menú') ||
+      fullText.includes('supermercado') ||
+      fullText.includes('mercado') ||
+      fullText.includes('abarrotes') ||
+      fullText.includes('víveres') ||
+      fullText.includes('viveres') ||
+      fullText.includes('planta') ||
+      fullText.includes('maceta') ||
+      fullText.includes('decoracion') ||
+      fullText.includes('decoración') ||
+      fullText.includes('mueble') ||
+      fullText.includes('ferreteria') ||
+      fullText.includes('ferretería') ||
+      fullText.includes('herramienta') ||
+      fullText.includes('ropa') ||
+      fullText.includes('zapatilla') ||
+      fullText.includes('gasolina') ||
+      fullText.includes('combustible');
 
-    if (tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE' && isRecurringKeyword && (tx.cuotas <= 1 || !tx.cuotas)) {
+    // 2. STRICT USER / EXPLICIT SETTING: If explicitly marked as one-time / punctual or NOT fixed, preserve it strictly!
+    if (tx.es_gasto_fijo === false || tx.frecuencia_recurrencia === 'PUNTUAL') {
+      return {
+        ...tx,
+        id: uniqueId,
+        fecha: normalizedFecha,
+        es_gasto_fijo: false,
+        frecuencia_recurrencia: 'PUNTUAL' as const,
+        dia_pago_mensual: undefined,
+      };
+    }
+
+    // 3. STRICT USER / EXPLICIT SETTING: If explicitly marked as fixed recurring monthly
+    if (tx.es_gasto_fijo === true || tx.frecuencia_recurrencia === 'MENSUAL') {
       return {
         ...tx,
         id: uniqueId,
         fecha: normalizedFecha,
         es_gasto_fijo: true,
         frecuencia_recurrencia: 'MENSUAL' as const,
+        dia_pago_mensual: tx.dia_pago_mensual || getTransactionDueDay({ ...tx, fecha: normalizedFecha }),
       };
     }
+
+    // 4. Default keyword heuristics for new unclassified transactions
+    if (isVariableOrCasualItem) {
+      return {
+        ...tx,
+        id: uniqueId,
+        fecha: normalizedFecha,
+        es_gasto_fijo: false,
+        frecuencia_recurrencia: 'PUNTUAL' as const,
+        dia_pago_mensual: undefined,
+      };
+    }
+
+    // Recognize genuine recurring fixed utility contracts (gym, rent, electricity, water, internet, gas, etc.)
+    const isGym =
+      titleAndConcept.includes('gym') ||
+      titleAndConcept.includes('gimnas') ||
+      titleAndConcept.includes('giman') ||
+      titleAndConcept.includes('smartfit') ||
+      titleAndConcept.includes('smart fit') ||
+      titleAndConcept.includes('smart-fit') ||
+      titleAndConcept.includes('fitness') ||
+      titleAndConcept.includes('bodytech') ||
+      titleAndConcept.includes('planet fitness') ||
+      titleAndConcept.includes('golds gym') ||
+      titleAndConcept.includes("gold's gym") ||
+      titleAndConcept.includes('crossfit') ||
+      titleAndConcept.includes('calistenia') ||
+      titleAndConcept.includes('entrenamiento') ||
+      (titleAndConcept.includes('membres') &&
+        !titleAndConcept.includes('costco') &&
+        !titleAndConcept.includes('sam'));
+
+    const isFixedContract =
+      isGym ||
+      /\balquiler\b/i.test(titleAndConcept) ||
+      /\brenta\b/i.test(titleAndConcept) ||
+      (/\bdepartamento\b/i.test(titleAndConcept) && !titleAndConcept.includes('planta')) ||
+      /\bdepa\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('internet') ||
+      titleAndConcept.includes('calidda') ||
+      titleAndConcept.includes('cálidda') ||
+      titleAndConcept.includes('servicio de gas') ||
+      titleAndConcept.includes('recibo de gas') ||
+      titleAndConcept.includes('balon de gas') ||
+      titleAndConcept.includes('balón de gas') ||
+      (/\bgas\b/i.test(titleAndConcept) && !titleAndConcept.includes('gasto') && !titleAndConcept.includes('gastron') && !titleAndConcept.includes('gasfitero')) ||
+      /\bluz\b/i.test(titleAndConcept) ||
+      /\bagua\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('sedapal') ||
+      titleAndConcept.includes('enel') ||
+      titleAndConcept.includes('luz del sur') ||
+      titleAndConcept.includes('netflix') ||
+      titleAndConcept.includes('spotify') ||
+      titleAndConcept.includes('paramount') ||
+      titleAndConcept.includes('icloud') ||
+      titleAndConcept.includes('prime') ||
+      titleAndConcept.includes('disney') ||
+      titleAndConcept.includes('hbo') ||
+      /\bmax\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('colegio') ||
+      titleAndConcept.includes('escuela') ||
+      titleAndConcept.includes('universidad') ||
+      titleAndConcept.includes('pension') ||
+      titleAndConcept.includes('pensión') ||
+      titleAndConcept.includes('seguro') ||
+      titleAndConcept.includes('arbitrios') ||
+      titleAndConcept.includes('cochera') ||
+      titleAndConcept.includes('estacionamiento');
+
+    if (tx.tipo_operacion === 'GASTO' && isFixedContract && (tx.cuotas <= 1 || !tx.cuotas)) {
+      return {
+        ...tx,
+        id: uniqueId,
+        fecha: normalizedFecha,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL' as const,
+        dia_pago_mensual: getTransactionDueDay({ ...tx, fecha: normalizedFecha }),
+      };
+    }
+
     return {
       ...tx,
       id: uniqueId,
       fecha: normalizedFecha,
+      es_gasto_fijo: false,
+      frecuencia_recurrencia: 'PUNTUAL' as const,
     };
   });
+
+  // 5. Reconcile recurring commitments: if a recurring concept was paid in a month,
+  // reconcile any pending placeholder for that same concept in that same month so it shows as paid
+  const paidRecurringConceptsByMonth = new Set<string>();
+  rawList.forEach((tx) => {
+    if (tx.tipo_operacion === 'GASTO' && tx.estado_pago !== 'PENDIENTE') {
+      const monthKey = normalizeDateToISO(tx.fecha).slice(0, 7);
+      const conceptKey = getRecurringConceptKey(tx);
+      if (conceptKey) {
+        paidRecurringConceptsByMonth.add(`${monthKey}::${conceptKey}`);
+      }
+    }
+  });
+
+  const reconciledList = rawList.map((tx) => {
+    if (tx.tipo_operacion === 'GASTO' && tx.estado_pago === 'PENDIENTE') {
+      const monthKey = normalizeDateToISO(tx.fecha).slice(0, 7);
+      const conceptKey = getRecurringConceptKey(tx);
+      if (conceptKey && paidRecurringConceptsByMonth.has(`${monthKey}::${conceptKey}`)) {
+        return {
+          ...tx,
+          estado_pago: 'PAGADO' as const,
+          dia_pago_mensual: getTransactionDueDay(tx),
+        };
+      }
+    }
+    return tx;
+  });
+
+  return reconciledList;
 };
 
 const sortTransactionsByDateDesc = (txs: TransactionRecord[]): TransactionRecord[] => {
@@ -901,7 +1039,28 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
         allText.includes('lavadora') ||
         allText.includes('electrodomestico') ||
         allText.includes('electrodoméstico') ||
-        allText.includes('gasfitero');
+        allText.includes('gasfitero') ||
+        allText.includes('camote') ||
+        allText.includes('papa') ||
+        allText.includes('verdura') ||
+        allText.includes('fruta') ||
+        allText.includes('carne') ||
+        allText.includes('pollo') ||
+        allText.includes('comida') ||
+        allText.includes('almuerzo') ||
+        allText.includes('cena') ||
+        allText.includes('menu') ||
+        allText.includes('menú') ||
+        allText.includes('planta') ||
+        allText.includes('maceta') ||
+        allText.includes('decoracion') ||
+        allText.includes('decoración') ||
+        allText.includes('mueble') ||
+        allText.includes('ferreteria') ||
+        allText.includes('ferretería') ||
+        allText.includes('herramienta') ||
+        allText.includes('ropa') ||
+        allText.includes('zapatilla');
 
       const isCleaningOrGrocery =
         allText.includes('limpieza') ||
@@ -923,8 +1082,8 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
         !isCleaningOrGrocery &&
         !isCasualExpense &&
         (allText.includes('alquiler') ||
-          allText.includes('departamento') ||
-          allText.includes('depa') ||
+          (/\bdepartamento\b/i.test(allText) && !allText.includes('planta')) ||
+          /\bdepa\b/i.test(allText) ||
           allText.includes('cochera mensual') ||
           allText.includes('mantenimiento de edificio') ||
           allText.includes('mantenimiento del edificio') ||
@@ -952,12 +1111,12 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
           allText.includes('hbo') ||
           allText.includes('paramount') ||
           allText.includes('youtube') ||
-          allText.includes('max') ||
+          /\bmax\b/i.test(allText) ||
           allText.includes('apple') ||
           allText.includes('cada mes') ||
           allText.includes('de cada mes'));
 
-      if (isCasualExpense) {
+      if (isCasualExpense || isCleaningOrGrocery) {
         isGastoFijo = false;
       } else if (hasFixedKeywords) {
         isGastoFijo = true;
@@ -967,30 +1126,29 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
 
       // Determine payment status (PENDIENTE vs PAGADO)
       let estadoPago: 'PAGADO' | 'PENDIENTE' = parsedData.estado_pago || 'PAGADO';
-      let diaPago: number | undefined = parsedData.dia_pago_mensual;
+      let diaPago: number | undefined = isGastoFijo ? parsedData.dia_pago_mensual : undefined;
 
       const userText = (params.textPrompt || '').toLowerCase();
       const isFutureCommitmentText =
-        allText.includes('tengo que pagar') ||
-        allText.includes('debo pagar') ||
-        allText.includes('vence el') ||
-        allText.includes('los dias') ||
-        allText.includes('los días') ||
-        allText.includes('de cada mes') ||
-        allText.includes('cada mes') ||
-        allText.includes('para el día') ||
-        allText.includes('para el dia') ||
-        allText.includes('el día') ||
-        allText.includes('el dia');
+        !isCasualExpense &&
+        !isCleaningOrGrocery &&
+        (allText.includes('tengo que pagar') ||
+          allText.includes('debo pagar') ||
+          allText.includes('vence el') ||
+          allText.includes('de cada mes') ||
+          allText.includes('cada mes') ||
+          allText.includes('todos los meses') ||
+          allText.includes('pago recurrente') ||
+          allText.includes('gasto fijo'));
 
-      if (isFutureCommitmentText || parsedData.estado_pago === 'PENDIENTE') {
-        estadoPago = parsedData.estado_pago || 'PENDIENTE';
-        isGastoFijo = true; // Scheduled commitments are recurring fixed expenses
+      if (isFutureCommitmentText) {
+        estadoPago = 'PENDIENTE';
+        isGastoFijo = true;
 
         const textToMatch = userText || allText;
         const matchDay =
           textToMatch.match(/(\d{1,2})\s*de\s*cada\s*mes/i) ||
-          textToMatch.match(/(?:el|días|dias|día|dia|para|vence)\s*(\d{1,2})/i);
+          textToMatch.match(/(?:vence|paga|día|dia)\s*(\d{1,2})/i);
 
         if (matchDay && matchDay[1]) {
           const parsedDay = parseInt(matchDay[1], 10);
@@ -998,7 +1156,15 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
             diaPago = parsedDay;
           }
         }
-        if (!diaPago) diaPago = 21;
+        if (!diaPago) {
+          const dayFromDate = parseInt(validFecha.split('-')[2], 10);
+          diaPago = !isNaN(dayFromDate) && dayFromDate >= 1 && dayFromDate <= 31 ? dayFromDate : 1;
+        }
+      }
+
+      if (isGastoFijo && !diaPago) {
+        const dayFromDate = parseInt(validFecha.split('-')[2], 10);
+        diaPago = !isNaN(dayFromDate) && dayFromDate >= 1 && dayFromDate <= 31 ? dayFromDate : 1;
       }
 
       // Build complete TransactionRecord
@@ -1161,32 +1327,23 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
   };
 
   const handleCancelFixedExpense = (tx: TransactionRecord) => {
-    const targetKey = getRecurringConceptKey(tx);
+    // Strictly target only the single clicked transaction by ID, avoiding bulk cancellation
     const updated = sortTransactionsByDateDesc(
       transactions
         .filter((t) => {
-          const isSame =
-            t.id === tx.id ||
-            getRecurringConceptKey(t) === targetKey ||
-            areSameRecurringConcept(t, tx);
-
-          // If it is the same recurring concept and it is PENDING, delete it completely
-          if (isSame && t.estado_pago === 'PENDIENTE') {
+          // If it is the exact targeted pending commitment, delete it
+          if (t.id === tx.id && t.estado_pago === 'PENDIENTE') {
             return false;
           }
           return true;
         })
         .map((t) => {
-          const isSame =
-            t.id === tx.id ||
-            getRecurringConceptKey(t) === targetKey ||
-            areSameRecurringConcept(t, tx);
-
-          if (isSame) {
+          if (t.id === tx.id) {
             return {
               ...t,
               es_gasto_fijo: false,
               frecuencia_recurrencia: 'PUNTUAL' as const,
+              dia_pago_mensual: undefined,
             };
           }
           return t;
@@ -1380,7 +1537,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
                         }`}
                       >
                         {successNotification.estadoPago === 'PENDIENTE'
-                          ? `PENDIENTE (PAGA EL DÍA ${successNotification.diaPago || 21})`
+                          ? `PENDIENTE (PAGA EL DÍA ${successNotification.diaPago || 1})`
                           : successNotification.tipo === 'INGRESO'
                           ? 'INGRESO'
                           : successNotification.esGastoFijo

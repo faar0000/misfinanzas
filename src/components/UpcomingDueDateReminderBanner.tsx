@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, Calendar, CheckCircle2, ArrowRight, X } from 'lucide-react';
 import { TransactionRecord } from '../types';
+import { getTransactionDueDay } from '../lib/financial';
 
 interface UpcomingDueDateReminderBannerProps {
   transactions: TransactionRecord[];
@@ -80,7 +81,7 @@ export const UpcomingDueDateReminderBanner: React.FC<UpcomingDueDateReminderBann
 
       <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
         {upcomingExpenses.map((tx) => {
-          const dueDay = tx.dia_pago_mensual || 21;
+          const dueDay = getTransactionDueDay(tx);
           const daysRemaining = dueDay - currentDay;
           const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
           const monto = tx.monto_total;
@@ -93,7 +94,7 @@ export const UpcomingDueDateReminderBanner: React.FC<UpcomingDueDateReminderBann
             badgeText = '¡Vence Hoy!';
             badgeBg = 'bg-red-500 text-white font-black animate-pulse';
           } else if (daysRemaining === 1) {
-            badgeText = 'Vence Mañana (Día 1)';
+            badgeText = `Vence Mañana (Día ${dueDay})`;
             badgeBg = 'bg-orange-500 text-white font-extrabold';
           } else if (daysRemaining > 1) {
             badgeText = `Vence en ${daysRemaining} días (Día ${dueDay})`;

@@ -20,7 +20,7 @@ import {
   Check,
 } from 'lucide-react';
 import { TransactionRecord } from '../types';
-import { normalizeDateToISO } from '../lib/financial';
+import { normalizeDateToISO, getTransactionDueDay } from '../lib/financial';
 
 interface TransactionsListProps {
   transactions: TransactionRecord[];
@@ -353,9 +353,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 </span>
 
                                 {/* Recurring / Fixed indicator */}
-                                {tx.es_gasto_fijo && (
+                                {tx.es_gasto_fijo ? (
                                   <span className="px-1 py-0.2 bg-purple-50 text-purple-700 text-[9px] font-bold rounded-xs border border-purple-200">
                                     Fijo
+                                  </span>
+                                ) : (
+                                  <span className="px-1 py-0.2 bg-slate-100 text-slate-600 text-[9px] font-semibold rounded-xs border border-slate-200">
+                                    Único
                                   </span>
                                 )}
 
@@ -447,15 +451,31 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    const nextIsFixed = !tx.es_gasto_fijo;
                                     onUpdateTransaction?.(tx.id, {
-                                      es_gasto_fijo: !tx.es_gasto_fijo,
-                                      frecuencia_recurrencia: tx.es_gasto_fijo ? 'PUNTUAL' : 'MENSUAL',
+                                      es_gasto_fijo: nextIsFixed,
+                                      frecuencia_recurrencia: nextIsFixed ? 'MENSUAL' : 'PUNTUAL',
+                                      dia_pago_mensual: nextIsFixed ? getTransactionDueDay(tx) : undefined,
                                     });
                                   }}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 text-[10px] font-bold rounded-xs border border-slate-200 transition-colors cursor-pointer"
+                                  className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-xs border transition-colors cursor-pointer ${
+                                    tx.es_gasto_fijo
+                                      ? 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'
+                                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                  title={tx.es_gasto_fijo ? 'Clic para cambiar a Compra Única' : 'Clic para cambiar a Gasto Fijo Mensual'}
                                 >
-                                  <RotateCw className="w-3 h-3 text-purple-600" />
-                                  <span>{tx.es_gasto_fijo ? 'Gasto Fijo Mensual' : 'Compra Única'}</span>
+                                  {tx.es_gasto_fijo ? (
+                                    <>
+                                      <RotateCw className="w-3 h-3 text-purple-600" />
+                                      <span>Gasto Fijo Mensual</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Tag className="w-3 h-3 text-slate-500" />
+                                      <span>Compra Única</span>
+                                    </>
+                                  )}
                                 </button>
                               )}
 

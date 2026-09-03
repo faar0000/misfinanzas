@@ -28,6 +28,7 @@ import { TransactionRecord } from '../types';
 import {
   getLatestFixedExpenses,
   getRecurringConceptKey,
+  getTransactionDueDay,
   isUpcomingDueDateAlert,
   getActiveInstallmentForMonth,
   normalizeDateToISO,
@@ -166,11 +167,15 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
 
   // Sort strictly by due day (dia_pago_mensual) in ascending order (earliest due date first)
   const fixedExpensesList = rawFixedExpensesList
-    .filter((tx) => tx.es_gasto_fijo === true || tx.estado_pago === 'PENDIENTE' || tx.frecuencia_recurrencia === 'MENSUAL' || tx.es_gasto_fijo !== false)
+    .filter((tx) => {
+      // Strictly exclude any expense explicitly marked as one-time / punctual or not fixed
+      if (tx.es_gasto_fijo === false || tx.frecuencia_recurrencia === 'PUNTUAL') return false;
+      return tx.es_gasto_fijo === true || tx.frecuencia_recurrencia === 'MENSUAL';
+    })
     .sort((a, b) => {
-      const dueA = a.dia_pago_mensual || 21;
-      const dueB = b.dia_pago_mensual || 21;
-      if (dueA !== dueB) return dueA - dueB; // Chronological order by day of month (e.g., 5, 12, 21...)
+      const dueA = getTransactionDueDay(a);
+      const dueB = getTransactionDueDay(b);
+      if (dueA !== dueB) return dueA - dueB; // Chronological order by day of month (e.g., 2, 5, 12...)
       if (a.estado_pago === 'PENDIENTE' && b.estado_pago !== 'PENDIENTE') return -1;
       if (b.estado_pago === 'PENDIENTE' && a.estado_pago !== 'PENDIENTE') return 1;
       return (a.monto_total || 0) - (b.monto_total || 0);
@@ -384,7 +389,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
               {fixedExpensesList.map((tx) => {
                 const title = tx.titulo_resumen || tx.items[0]?.concepto || 'Gasto Fijo';
                 const isPendiente = tx.estado_pago === 'PENDIENTE';
-                const dueDay = tx.dia_pago_mensual || 21;
+                const dueDay = getTransactionDueDay(tx);
                 const daysRemaining = dueDay - currentDay;
                 const isUrgent = isPendiente && isUpcomingDueDateAlert(tx, currentDay);
 

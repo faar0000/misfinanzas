@@ -1041,6 +1041,31 @@ export const getNormalizedSubcategoryName = (
 };
 
 /**
+ * Accurately determines the due day (1-31) of a transaction.
+ * If dia_pago_mensual is explicitly set, it is used.
+ * Otherwise, it extracts the exact day of the month from tx.fecha (e.g. 02/09 -> 2).
+ * Default fallback is 1 (never arbitrary 21).
+ */
+export const getTransactionDueDay = (
+  tx: Partial<TransactionRecord> & { fecha?: string; dia_pago_mensual?: number }
+): number => {
+  if (typeof tx.dia_pago_mensual === 'number' && tx.dia_pago_mensual >= 1 && tx.dia_pago_mensual <= 31) {
+    return tx.dia_pago_mensual;
+  }
+  if (tx.fecha) {
+    const iso = normalizeDateToISO(tx.fecha);
+    const parts = iso.split('-');
+    if (parts.length >= 3) {
+      const d = parseInt(parts[2], 10);
+      if (!isNaN(d) && d >= 1 && d <= 31) {
+        return d;
+      }
+    }
+  }
+  return 1;
+};
+
+/**
  * Normalizes recurring payment concepts (e.g., Luz, Agua, Teléfono/Internet, Alquiler, Cochera, Mantenimiento)
  * to group multiple historical receipts under the same recurring service concept.
  */
@@ -1048,11 +1073,11 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
   const fullText = (
     (tx.titulo_resumen || '') +
     ' ' +
-    (tx.items[0]?.concepto || '') +
+    (tx.comercio || '') +
     ' ' +
-    (tx.items[0]?.subcategoria || '') +
+    (tx.mensaje_usuario || '') +
     ' ' +
-    (tx.items[0]?.categoria_principal || '')
+    (tx.items || []).map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
   )
     .toLowerCase()
     .trim();
@@ -1072,7 +1097,30 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
     return 'combustible_vehiculo';
   }
 
-  if (fullText.includes('mantenimiento')) return 'mantenimiento_edificio';
+  const titleAndConcept = (
+    (tx.titulo_resumen || '') +
+    ' ' +
+    (tx.comercio || '') +
+    ' ' +
+    (tx.items[0]?.concepto || '') +
+    ' ' +
+    (tx.items[0]?.subcategoria || '')
+  ).toLowerCase();
+
+  // Building / Condominium maintenance fee (must NOT match general category 'Hogar y Mantenimiento')
+  if (
+    /\bmantenimiento\b/i.test(titleAndConcept) &&
+    (titleAndConcept.includes('edificio') ||
+      titleAndConcept.includes('condominio') ||
+      titleAndConcept.includes('depa') ||
+      titleAndConcept.includes('departamento') ||
+      titleAndConcept.includes('cuota') ||
+      titleAndConcept.includes('residencia') ||
+      titleAndConcept.includes('junta'))
+  ) {
+    return 'mantenimiento_edificio';
+  }
+
   if (
     fullText.includes('cochera') ||
     fullText.includes('estacionamiento') ||
@@ -1082,22 +1130,22 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
     return 'alquiler_cochera';
   }
   if (
-    fullText.includes('alquiler') ||
-    fullText.includes('departamento') ||
-    fullText.includes('depa') ||
-    fullText.includes('renta depa')
+    /\balquiler\b/i.test(fullText) ||
+    /\brenta\b/i.test(fullText) ||
+    (/\bdepartamento\b/i.test(fullText) && !fullText.includes('compra') && !fullText.includes('planta')) ||
+    /\bdepa\b/i.test(fullText)
   ) {
     return 'alquiler_departamento';
   }
   if (
-    fullText.includes('luz') ||
+    /\bluz\b/i.test(fullText) ||
     fullText.includes('enel') ||
     fullText.includes('luz del sur') ||
     fullText.includes('electricidad')
   ) {
     return 'servicio_luz';
   }
-  if (fullText.includes('agua') || fullText.includes('sedapal')) {
+  if (/\bagua\b/i.test(fullText) || fullText.includes('sedapal')) {
     return 'servicio_agua';
   }
   if (
@@ -1131,11 +1179,26 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
   ) {
     return 'arbitrios_municipales';
   }
-  if (
+  const isGymConcept =
     fullText.includes('gym') ||
-    fullText.includes('gimnasio') ||
-    fullText.includes('smartfit')
-  ) {
+    fullText.includes('gimnas') ||
+    fullText.includes('giman') ||
+    fullText.includes('smartfit') ||
+    fullText.includes('smart fit') ||
+    fullText.includes('smart-fit') ||
+    fullText.includes('fitness') ||
+    fullText.includes('bodytech') ||
+    fullText.includes('planet fitness') ||
+    fullText.includes('golds gym') ||
+    fullText.includes("gold's gym") ||
+    fullText.includes('crossfit') ||
+    fullText.includes('calistenia') ||
+    fullText.includes('entrenamiento') ||
+    (fullText.includes('membres') &&
+      !fullText.includes('costco') &&
+      !fullText.includes('sam'));
+
+  if (isGymConcept) {
     return 'suscripcion_gimnasio';
   }
   if (
@@ -1150,10 +1213,10 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
   if (fullText.includes('paramount')) return 'suscripcion_paramount';
   if (fullText.includes('netflix')) return 'suscripcion_netflix';
   if (fullText.includes('spotify')) return 'suscripcion_spotify';
-  if (fullText.includes('icloud') || fullText.includes('apple')) return 'suscripcion_apple_icloud';
-  if (fullText.includes('amazon') || fullText.includes('prime')) return 'suscripcion_amazon_prime';
+  if (fullText.includes('icloud') || (fullText.includes('apple') && fullText.includes('music'))) return 'suscripcion_apple_icloud';
+  if (fullText.includes('prime') || fullText.includes('amazon prime')) return 'suscripcion_amazon_prime';
   if (fullText.includes('disney')) return 'suscripcion_disney';
-  if (fullText.includes('hbo') || fullText.includes('max')) return 'suscripcion_hbo_max';
+  if (fullText.includes('hbo') || /\bmax\b/i.test(fullText)) return 'suscripcion_hbo_max';
 
   // Normalize generic concept: strip generic terms like "suscripcion", "servicio", "pago", month names, numbers
   const titleOrConcept = (tx.titulo_resumen || tx.items[0]?.concepto || '').toLowerCase();
@@ -1207,8 +1270,25 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
     // Multi-installment credit card purchases (> 1 cuota) are tracked separately in cuotas projection
     if (t.metodo_pago === 'CREDITO' && t.cuotas > 1) return false;
 
-    // Vehicle fuel (Gasolina, Repsol, Primax) is an operational variable expense, not a fixed home utility
-    const text = (
+    // 1. STRICT PRIORITY: If explicitly marked as one-time purchase or not fixed, NEVER treat as fixed expense
+    if (t.es_gasto_fijo === false || t.frecuencia_recurrencia === 'PUNTUAL') {
+      return false;
+    }
+
+    // 2. Explicitly marked as fixed recurring monthly expense by user or recurring settings
+    if (t.es_gasto_fijo === true || t.frecuencia_recurrencia === 'MENSUAL') {
+      return true;
+    }
+
+    const titleAndConcept = (
+      (t.titulo_resumen || '') +
+      ' ' +
+      (t.items?.[0]?.concepto || '') +
+      ' ' +
+      (t.items?.[0]?.subcategoria || '')
+    ).toLowerCase();
+
+    const fullText = (
       (t.titulo_resumen || '') +
       ' ' +
       (t.comercio || '') +
@@ -1216,88 +1296,139 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       t.items.map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
 
+    // 3. Exclude vehicle fuel / gas stations (variable operational transport expense)
     const isVehicleFuel =
-      text.includes('gasolina') ||
-      text.includes('gasohol') ||
-      text.includes('combustible') ||
-      text.includes('grifo') ||
-      text.includes('primax') ||
-      text.includes('repsol') ||
-      text.includes('pecsa') ||
-      text.includes('petroperu');
+      fullText.includes('gasolina') ||
+      fullText.includes('gasohol') ||
+      fullText.includes('combustible') ||
+      fullText.includes('grifo') ||
+      fullText.includes('primax') ||
+      fullText.includes('repsol') ||
+      fullText.includes('pecsa') ||
+      fullText.includes('petroperu');
 
-    if (isVehicleFuel && t.es_gasto_fijo !== true) return false;
+    if (isVehicleFuel) return false;
 
-    // 1. Explicitly marked as fixed by user, badge, or recurring settings
-    if (t.es_gasto_fijo === true) return true;
-    if (t.frecuencia_recurrencia === 'MENSUAL') return true;
+    // 4. Exclude food, groceries, vegetables, dining, plants, home decor, clothing, supplies
+    const isFoodOrVariablePurchase =
+      fullText.includes('alimentación') ||
+      fullText.includes('alimentacion') ||
+      fullText.includes('gastos hormiga') ||
+      fullText.includes('comida') ||
+      fullText.includes('supermercado') ||
+      fullText.includes('mercado') ||
+      fullText.includes('abarrotes') ||
+      fullText.includes('víveres') ||
+      fullText.includes('viveres') ||
+      fullText.includes('camote') ||
+      fullText.includes('papa') ||
+      fullText.includes('verdura') ||
+      fullText.includes('fruta') ||
+      fullText.includes('carne') ||
+      fullText.includes('pollo') ||
+      fullText.includes('planta') ||
+      fullText.includes('maceta') ||
+      fullText.includes('decoracion') ||
+      fullText.includes('decoración') ||
+      fullText.includes('mueble') ||
+      fullText.includes('limpieza') ||
+      fullText.includes('aseo') ||
+      fullText.includes('detergente') ||
+      fullText.includes('desinfectante') ||
+      fullText.includes('jabón') ||
+      fullText.includes('jabon') ||
+      fullText.includes('shampoo') ||
+      fullText.includes('almuerzo') ||
+      fullText.includes('menu') ||
+      fullText.includes('menú') ||
+      fullText.includes('cena') ||
+      fullText.includes('delivery');
 
-    // 2. Pending commitments with payment day or fixed keywords
-    if (t.estado_pago === 'PENDIENTE' && Boolean(t.dia_pago_mensual)) return true;
+    if (isFoodOrVariablePurchase) return false;
 
-    // Explicitly cancelled or marked as not fixed for executed historical one-time purchases
-    if (t.es_gasto_fijo === false && t.frecuencia_recurrencia === 'PUNTUAL' && t.estado_pago !== 'PENDIENTE') {
-      return false;
+    // 5. Check if it matches genuine fixed recurring contracts based on title and concept
+    const isGym =
+      titleAndConcept.includes('gym') ||
+      titleAndConcept.includes('gimnas') ||
+      titleAndConcept.includes('giman') ||
+      titleAndConcept.includes('smartfit') ||
+      titleAndConcept.includes('smart fit') ||
+      titleAndConcept.includes('smart-fit') ||
+      titleAndConcept.includes('fitness') ||
+      titleAndConcept.includes('bodytech') ||
+      titleAndConcept.includes('planet fitness') ||
+      titleAndConcept.includes('golds gym') ||
+      titleAndConcept.includes("gold's gym") ||
+      titleAndConcept.includes('crossfit') ||
+      titleAndConcept.includes('calistenia') ||
+      titleAndConcept.includes('entrenamiento') ||
+      (titleAndConcept.includes('membres') &&
+        !titleAndConcept.includes('costco') &&
+        !titleAndConcept.includes('sam'));
+
+    const isBuildingMaintenance =
+      /\bmantenimiento\b/i.test(titleAndConcept) &&
+      (titleAndConcept.includes('edificio') ||
+        titleAndConcept.includes('condominio') ||
+        titleAndConcept.includes('depa') ||
+        titleAndConcept.includes('departamento') ||
+        titleAndConcept.includes('cuota') ||
+        titleAndConcept.includes('residencia') ||
+        titleAndConcept.includes('junta'));
+
+    const hasFixedContractKeyword =
+      isGym ||
+      /\balquiler\b/i.test(titleAndConcept) ||
+      /\brenta\b/i.test(titleAndConcept) ||
+      (/\bdepartamento\b/i.test(titleAndConcept) && !titleAndConcept.includes('planta')) ||
+      /\bdepa\b/i.test(titleAndConcept) ||
+      fullText.includes('cochera') ||
+      fullText.includes('estacionamiento') ||
+      isBuildingMaintenance ||
+      /\bluz\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('enel') ||
+      titleAndConcept.includes('luz del sur') ||
+      titleAndConcept.includes('electricidad') ||
+      /\bagua\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('sedapal') ||
+      titleAndConcept.includes('internet') ||
+      titleAndConcept.includes('cable') ||
+      titleAndConcept.includes('claro') ||
+      titleAndConcept.includes('movistar') ||
+      titleAndConcept.includes('win') ||
+      titleAndConcept.includes('entel') ||
+      titleAndConcept.includes('telefono') ||
+      titleAndConcept.includes('teléfono') ||
+      titleAndConcept.includes('celular') ||
+      titleAndConcept.includes('calidda') ||
+      titleAndConcept.includes('cálidda') ||
+      titleAndConcept.includes('servicio de gas') ||
+      titleAndConcept.includes('recibo de gas') ||
+      titleAndConcept.includes('balon de gas') ||
+      titleAndConcept.includes('balón de gas') ||
+      (/\bgas\b/i.test(titleAndConcept) && !titleAndConcept.includes('gasto') && !titleAndConcept.includes('gastron') && !titleAndConcept.includes('gasfitero')) ||
+      titleAndConcept.includes('arbitrios') ||
+      titleAndConcept.includes('muni') ||
+      titleAndConcept.includes('predial') ||
+      titleAndConcept.includes('colegio') ||
+      titleAndConcept.includes('escuela') ||
+      titleAndConcept.includes('universidad') ||
+      titleAndConcept.includes('pension') ||
+      titleAndConcept.includes('pensión') ||
+      titleAndConcept.includes('seguro') ||
+      titleAndConcept.includes('paramount') ||
+      titleAndConcept.includes('netflix') ||
+      titleAndConcept.includes('spotify') ||
+      titleAndConcept.includes('icloud') ||
+      titleAndConcept.includes('prime') ||
+      titleAndConcept.includes('disney') ||
+      titleAndConcept.includes('hbo') ||
+      /\bmax\b/i.test(titleAndConcept) ||
+      titleAndConcept.includes('cada mes');
+
+    if (hasFixedContractKeyword) {
+      return true;
     }
-
-    // 3. Keyword heuristic detection
-    const isCleaningOrGrocery =
-      text.includes('limpieza') ||
-      text.includes('aseo') ||
-      text.includes('detergente') ||
-      text.includes('desinfectante') ||
-      text.includes('jabón') ||
-      text.includes('jabon') ||
-      text.includes('shampoo') ||
-      text.includes('supermercado') ||
-      text.includes('abarrotes') ||
-      text.includes('víveres') ||
-      text.includes('viveres');
-
-    if (isCleaningOrGrocery) return false;
-
-    const hasFixedKeyword =
-      text.includes('alquiler') ||
-      text.includes('departamento') ||
-      text.includes('depa') ||
-      text.includes('cochera') ||
-      text.includes('estacionamiento') ||
-      text.includes('mantenimiento') ||
-      text.includes('luz') ||
-      text.includes('agua') ||
-      text.includes('internet') ||
-      text.includes('calidda') ||
-      text.includes('cálidda') ||
-      text.includes('servicio de gas') ||
-      text.includes('recibo de gas') ||
-      text.includes('balon de gas') ||
-      text.includes('balón de gas') ||
-      (/\bgas\b/i.test(text) && !text.includes('gasto') && !text.includes('gastron') && !text.includes('gasfitero')) ||
-      text.includes('telefono') ||
-      text.includes('teléfono') ||
-      text.includes('celular') ||
-      text.includes('suscripc') ||
-      text.includes('colegio') ||
-      text.includes('escuela') ||
-      text.includes('pension') ||
-      text.includes('pensión') ||
-      text.includes('gym') ||
-      text.includes('gimnasio') ||
-      text.includes('seguro') ||
-      text.includes('arbitrios') ||
-      text.includes('paramount') ||
-      text.includes('netflix') ||
-      text.includes('spotify') ||
-      text.includes('icloud') ||
-      text.includes('prime') ||
-      text.includes('disney') ||
-      text.includes('hbo') ||
-      text.includes('youtube') ||
-      text.includes('max') ||
-      text.includes('apple') ||
-      text.includes('cada mes');
-
-    if (hasFixedKeyword) return true;
 
     return false;
   });
@@ -1340,9 +1471,10 @@ export const getLatestFixedExpenses = (
     if (!latestTx) return;
 
     // Check if there is an explicit payment made in the target/current month
+    // Any transaction in the target month that is not explicitly PENDIENTE is an executed cash/bank payment!
     const currentMonthPayment = sorted.find((t) => {
       const iso = normalizeDateToISO(t.fecha);
-      return iso.startsWith(currentMonthKey) && t.estado_pago === 'PAGADO';
+      return iso.startsWith(currentMonthKey) && t.estado_pago !== 'PENDIENTE';
     });
 
     // Check if there is an explicit pending commitment created for this month
@@ -1353,14 +1485,28 @@ export const getLatestFixedExpenses = (
 
     if (currentMonthPayment) {
       // It has already been paid in the current month!
-      result.push(currentMonthPayment);
+      const dueDay = getTransactionDueDay(currentMonthPayment);
+      result.push({
+        ...currentMonthPayment,
+        estado_pago: 'PAGADO',
+        dia_pago_mensual: dueDay,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL',
+      });
     } else if (currentMonthPending) {
       // It is explicitly recorded as pending for the current month
-      result.push(currentMonthPending);
+      const dueDay = getTransactionDueDay(currentMonthPending);
+      result.push({
+        ...currentMonthPending,
+        dia_pago_mensual: dueDay,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL',
+      });
     } else {
       // No payment or pending record in the current month yet.
       // In a new month, this recurring fixed expense is PENDING payment by default.
-      const dueDay = latestTx.dia_pago_mensual || 21;
+      // Use the actual day from the latest transaction (e.g. day 2 from 02/09), NOT arbitrary 21!
+      const dueDay = getTransactionDueDay(latestTx);
       const scheduledDate = `${currentMonthKey}-${String(dueDay).padStart(2, '0')}`;
       
       result.push({
@@ -1368,6 +1514,8 @@ export const getLatestFixedExpenses = (
         estado_pago: 'PENDIENTE',
         fecha: scheduledDate,
         dia_pago_mensual: dueDay,
+        es_gasto_fijo: true,
+        frecuencia_recurrencia: 'MENSUAL',
       });
     }
   });
@@ -1586,7 +1734,7 @@ export const isUpcomingDueDateAlert = (tx: TransactionRecord, currentDay = new D
   if (tx.tipo_operacion !== 'GASTO') return false;
   if (tx.estado_pago !== 'PENDIENTE') return false;
   
-  const dueDay = tx.dia_pago_mensual || 21;
+  const dueDay = getTransactionDueDay(tx);
   const daysRemaining = dueDay - currentDay;
   
   // Alert activates if due within 4 days (or overdue)
