@@ -20,7 +20,34 @@ export async function getOrCreateFinancialSpreadsheet(
   accessToken: string,
   title: string = 'Control Financiero Personal'
 ): Promise<{ id: string; url: string; isNew: boolean }> {
-  // 1. Search in Drive
+  // If we are using backend session and not a raw client accessToken
+  if (!accessToken || !accessToken.startsWith('ya29.')) {
+    const cachedId = localStorage.getItem('asistente_financiero_sheet_id');
+    const cachedUrl = localStorage.getItem('asistente_financiero_sheet_url');
+    if (cachedId && cachedUrl) {
+      return { id: cachedId, url: cachedUrl, isNew: false };
+    }
+
+    try {
+      const res = await fetch('/api/finanzas/cargar', { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.spreadsheetId) {
+          return {
+            id: json.spreadsheetId,
+            url: json.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${json.spreadsheetId}`,
+            isNew: false,
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return { id: cachedId || '', url: cachedUrl || '', isNew: false };
+  }
+
+  // 1. Search in Drive using client-side raw token
   const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
   const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink)`;
 
@@ -158,6 +185,44 @@ export async function readDataFromGoogleSheets(
   accessToken: string,
   spreadsheetId: string
 ): Promise<ImportedDriveData | null> {
+  // 1. Try Backend Proxy Endpoint first (Web Server Flow with refresh_token in HttpOnly cookie or Bearer token)
+  try {
+    const headers: Record<string, string> = {};
+    if (accessToken && accessToken !== 'backend-session') {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    const queryParams = new URLSearchParams({ spreadsheetId: spreadsheetId || '' });
+    if (accessToken && accessToken !== 'backend-session') {
+      queryParams.append('accessToken', accessToken);
+    }
+
+    const backendRes = await fetch(`/api/finanzas/cargar?${queryParams.toString()}`, {
+      headers,
+      credentials: 'include',
+    });
+    if (backendRes.ok) {
+      const json = await backendRes.json();
+      if (json.success && json.data) {
+        return json.data;
+      }
+    } else if (backendRes.status === 401) {
+      // If we don't have a direct raw Google access token, raise auth error
+      if (!accessToken || !accessToken.startsWith('ya29.')) {
+        throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+      }
+    }
+  } catch (backendErr: any) {
+    if (backendErr?.message?.includes('401 UNAUTHENTICATED')) {
+      throw backendErr;
+    }
+    // Continue to client-side fallback if raw token is present
+  }
+
+  // 2. Client-side fallback if a valid raw accessToken is available
+  if (!accessToken || !accessToken.startsWith('ya29.')) {
+    return null;
+  }
+
   let backupParsed: any = null;
 
   // 1. Read _DataBackup tab if available for rich config/budgets metadata
@@ -314,6 +379,55 @@ export async function syncDataToGoogleSheets(
   monedaSimbolo: string,
   extraBackupData?: { config?: BudgetConfig; categoryBudgets?: Record<string, number> }
 ): Promise<GoogleDriveSyncResult> {
+  // 1. Try Backend Proxy Endpoint first (Web Server Flow with HttpOnly refresh_token cookie or direct token)
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken && accessToken !== 'backend-session') {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    const backendRes = await fetch('/api/finanzas/guardar', {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({
+        accessToken: accessToken && accessToken !== 'backend-session' ? accessToken : undefined,
+        spreadsheetId,
+        transactions,
+        summary,
+        monedaSimbolo,
+        extraBackupData,
+      }),
+    });
+
+    if (backendRes.ok) {
+      const json = await backendRes.json();
+      if (json.success && json.spreadsheetId) {
+        return {
+          spreadsheetId: json.spreadsheetId,
+          spreadsheetUrl: json.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${json.spreadsheetId}`,
+          syncedAt: json.syncedAt || new Date().toLocaleTimeString('es-PE'),
+        };
+      }
+    } else if (backendRes.status === 401) {
+      if (!accessToken || !accessToken.startsWith('ya29.')) {
+        throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+      }
+    }
+  } catch (backendErr: any) {
+    if (backendErr?.message?.includes('401 UNAUTHENTICATED')) {
+      throw backendErr;
+    }
+    // Fall back to client-side if a raw token is present
+  }
+
+  // 2. Client-side fallback if raw token is present
+  if (!accessToken || !accessToken.startsWith('ya29.')) {
+    throw new Error('401 UNAUTHENTICATED: No hay sesión activa de Google ni token válido.');
+  }
+
   // Header and rows for 'Transacciones' sheet
   const headers = [
     'ID',

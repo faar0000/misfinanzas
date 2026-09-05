@@ -3,6 +3,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { processFinancialCore } from './api/process-financial.js';
+import { handleLogin } from './api/auth/login.js';
+import { handleCallback } from './api/auth/callback.js';
+import { handleSession } from './api/auth/session.js';
+import { handleLogout } from './api/auth/logout.js';
+import { handleGuardar } from './api/finanzas/guardar.js';
+import { handleCargar } from './api/finanzas/cargar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,9 +25,21 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasOAuth: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     time: new Date().toISOString()
   });
 });
+
+// Google OAuth Web Server Flow Routes (Vercel & Express compatible)
+app.get('/api/auth/login', handleLogin);
+app.get('/api/auth/callback', handleCallback);
+app.get('/api/auth/session', handleSession);
+app.post('/api/auth/session', handleSession);
+app.post('/api/auth/logout', handleLogout);
+
+// Google Drive & Google Sheets Proxy Routes
+app.post('/api/finanzas/guardar', handleGuardar);
+app.get('/api/finanzas/cargar', handleCargar);
 
 // Process Financial Operation Route
 app.post('/api/process-financial', async (req, res) => {

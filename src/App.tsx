@@ -606,12 +606,14 @@ export default function App() {
     setIsDriveSyncing(true);
     try {
       const fileInfo = await getOrCreateFinancialSpreadsheet(activeToken, 'Control Financiero Personal');
-      setSpreadsheetId(fileInfo.id);
-      setSpreadsheetUrl(fileInfo.url);
-      localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
-      localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
+      if (fileInfo.id) {
+        setSpreadsheetId(fileInfo.id);
+        setSpreadsheetUrl(fileInfo.url);
+        localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
+        localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
+      }
 
-      const importedData = await readDataFromGoogleSheets(activeToken, fileInfo.id);
+      const importedData = await readDataFromGoogleSheets(activeToken, fileInfo.id || spreadsheetId || '');
       if (importedData && importedData.transactions && importedData.transactions.length > 0) {
         skipNextAutoSyncRef.current = true;
         const sorted = sortTransactionsByDateDesc(importedData.transactions);
@@ -696,19 +698,10 @@ export default function App() {
     isSyncingRef.current = true;
     setIsDriveSyncing(true);
     try {
-      let sheetId = spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id');
+      let sheetId = spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id') || '';
       let sheetUrl = spreadsheetUrl || localStorage.getItem('asistente_financiero_sheet_url');
-      if (!sheetId) {
-        const fileInfo = await getOrCreateFinancialSpreadsheet(activeToken, 'Control Financiero Personal');
-        sheetId = fileInfo.id;
-        sheetUrl = fileInfo.url;
-        setSpreadsheetId(sheetId);
-        setSpreadsheetUrl(sheetUrl);
-        localStorage.setItem('asistente_financiero_sheet_id', sheetId);
-        localStorage.setItem('asistente_financiero_sheet_url', sheetUrl);
-      }
 
-      await syncDataToGoogleSheets(
+      const syncRes = await syncDataToGoogleSheets(
         activeToken,
         sheetId,
         txsToSync,
@@ -716,6 +709,14 @@ export default function App() {
         config.monedaSimbolo,
         { config, categoryBudgets }
       );
+
+      if (syncRes.spreadsheetId && syncRes.spreadsheetId !== sheetId) {
+        setSpreadsheetId(syncRes.spreadsheetId);
+        setSpreadsheetUrl(syncRes.spreadsheetUrl);
+        localStorage.setItem('asistente_financiero_sheet_id', syncRes.spreadsheetId);
+        localStorage.setItem('asistente_financiero_sheet_url', syncRes.spreadsheetUrl);
+      }
+
       const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setLastDriveSyncedAt(nowFormatted);
       localStorage.setItem('asistente_financiero_last_sync', nowFormatted);

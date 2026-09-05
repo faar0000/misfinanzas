@@ -180,26 +180,81 @@ export const getValidGoogleAccessToken = async (_forceRefresh: boolean = false):
   return cachedAccessToken;
 };
 
+export async function checkBackendSession(): Promise<{
+  authenticated: boolean;
+  user: { email: string | null; displayName: string | null; photoURL: string | null; uid: string } | null;
+  hasRefreshToken: boolean;
+  hasOAuthEnv?: boolean;
+}> {
+  try {
+    const res = await fetch('/api/auth/session', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        authenticated: Boolean(data.authenticated),
+        user: data.user
+          ? {
+              email: data.user.email || null,
+              displayName: data.user.displayName || null,
+              photoURL: data.user.photoURL || null,
+              uid: data.user.id || data.user.uid || 'google-user',
+            }
+          : null,
+        hasRefreshToken: Boolean(data.hasRefreshToken),
+        hasOAuthEnv: Boolean(data.hasOAuthEnv),
+      };
+    }
+  } catch (err) {
+    console.warn('Verificación de sesión backend:', err);
+  }
+  return { authenticated: false, user: null, hasRefreshToken: false };
+}
+
 export const initAuth = (
   onAuthSuccess?: (user: User | any, token: string) => void,
   onAuthFailure?: () => void
 ) => {
   if (typeof window !== 'undefined') {
+    // Check URL parameters for OAuth redirects
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('auth_error')) {
+      const err = params.get('auth_error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      console.warn('OAuth callback error:', err);
+    }
+
     setPersistence(auth, browserLocalPersistence).catch(() => {
       setPersistence(auth, inMemoryPersistence).catch(() => {});
     });
 
-    // Immediate hydration from localStorage: preserve user identity across days!
+    // Immediate hydration from localStorage: preserve user identity if valid client token
     const stored = getStoredAuthData();
-    if (stored.user) {
-      if (stored.token) {
-        cachedAccessToken = stored.token;
-        cachedExpiresAt = stored.expiresAt;
+    if (stored.user && stored.token && stored.token.startsWith('ya29.') && stored.isValid) {
+      cachedAccessToken = stored.token;
+      cachedExpiresAt = stored.expiresAt;
+      if (onAuthSuccess) {
+        onAuthSuccess(stored.user as any, stored.token);
       }
+    } else if (stored.user && stored.token !== 'backend-session') {
       if (onAuthSuccess) {
         onAuthSuccess(stored.user as any, stored.token || '');
       }
     }
+
+    // Verify session with the backend server (Web Server Flow with refresh_token cookie)
+    checkBackendSession().then((session) => {
+      if (session.authenticated && session.user) {
+        saveAuthTokenAndUser('backend-session', session.user, 30 * 24 * 3600);
+        if (onAuthSuccess) {
+          onAuthSuccess(session.user, 'backend-session');
+        }
+      } else if (stored.token === 'backend-session') {
+        clearStoredAuth();
+        if (onAuthFailure) onAuthFailure();
+      }
+    });
   }
 
   // Catch redirect authentication results on load (for mobile fallback)
@@ -223,17 +278,36 @@ export const initAuth = (
       const activeToken = stored.token || cachedAccessToken || '';
       saveAuthTokenAndUser(activeToken || null, user);
       if (onAuthSuccess) onAuthSuccess(user, activeToken);
-    } else if (stored.user) {
-      // User is remembered locally even if Firebase auth is initializing
-      if (onAuthSuccess) onAuthSuccess(stored.user as any, stored.token || '');
     } else {
-      clearStoredAuth();
-      if (onAuthFailure) onAuthFailure();
+      // Check backend session before clearing
+      const session = await checkBackendSession();
+      if (session.authenticated && session.user) {
+        saveAuthTokenAndUser('backend-session', session.user, 30 * 24 * 3600);
+        if (onAuthSuccess) onAuthSuccess(session.user, 'backend-session');
+      } else {
+        if (stored.token === 'backend-session' || !stored.isValid) {
+          clearStoredAuth();
+          if (onAuthFailure) onAuthFailure();
+        }
+      }
     }
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (): Promise<{ user: User | any; accessToken: string } | null> => {
+  // Check if Web Server OAuth is available in backend
+  try {
+    const sessionInfo = await checkBackendSession();
+    if (sessionInfo.hasOAuthEnv) {
+      // Redirect to Google Web Server Flow endpoint
+      window.location.href = '/api/auth/login';
+      return null;
+    }
+  } catch (err) {
+    console.warn('No se pudo verificar entorno backend para OAuth:', err);
+  }
+
+  // Fallback: If GOOGLE_CLIENT_ID is not configured in backend yet, inform the user or use popup
   try {
     await setPersistence(auth, browserLocalPersistence);
   } catch {
@@ -279,43 +353,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       }
     }
 
-    if (
-      error?.code === 'auth/unauthorized-domain' ||
-      error?.code === 'auth/popup-blocked' ||
-      error?.code === 'auth/popup-closed-by-user' ||
-      error?.code === 'auth/cancelled-popup-request' ||
-      errorMsg.includes('popup')
-    ) {
-      if (error?.code === 'auth/unauthorized-domain') {
-        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'tu-app.vercel.app';
-        alert(
-          `⚠️ Dominio no autorizado en Firebase (${currentDomain})\n\n` +
-          `Para usar Google Sign-In / Google Drive en Vercel:\n` +
-          `1. Crea tu propio proyecto en Firebase Console (https://console.firebase.google.com).\n` +
-          `2. En tu proyecto, ve a Authentication > Dominios Autorizados y agrega: "${currentDomain}".\n` +
-          `3. En Vercel, configura las Variables de Entorno:\n` +
-          `   - VITE_FIREBASE_API_KEY\n` +
-          `   - VITE_FIREBASE_AUTH_DOMAIN\n` +
-          `   - VITE_FIREBASE_PROJECT_ID\n` +
-          `   - VITE_FIREBASE_APP_ID`
-        );
-      }
-
-      if (error?.code === 'auth/popup-blocked') {
-        alert('⚠️ La ventana emergente fue bloqueada por tu navegador. Por favor permite las ventanas emergentes (popups) para este sitio.');
-      }
-
-      try {
-        console.log('Iniciando redirección a Google Sign-In...');
-        await signInWithRedirect(auth, provider);
-        return null;
-      } catch (redirectErr) {
-        console.error('Error en signInWithRedirect:', redirectErr);
-        throw redirectErr;
-      }
-    }
-
-    throw error;
+    // If popup fails or is blocked on Vercel, navigate to server login
+    window.location.href = '/api/auth/login';
+    return null;
   }
 };
 
@@ -324,7 +364,12 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 export const logoutGoogle = async () => {
-  await signOut(auth);
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch (err) {
+    console.warn('Error al cerrar sesión en el backend:', err);
+  }
+  await signOut(auth).catch(() => {});
   clearStoredAuth();
 };
 
