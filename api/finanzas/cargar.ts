@@ -107,6 +107,19 @@ export async function handleCargar(req: any, res: any) {
             });
           }
 
+          const rawTipoGasto = (row[11] || '').toString().trim().toUpperCase();
+          const rawFrecuencia = (row[12] || '').toString().trim().toUpperCase();
+          let es_gasto_fijo: boolean | undefined = undefined;
+          if (rawTipoGasto.includes('FIJO')) {
+            es_gasto_fijo = true;
+          } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
+            es_gasto_fijo = false;
+          }
+          let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
+          if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
+            frecuencia_recurrencia = rawFrecuencia;
+          }
+
           return {
             id,
             fecha,
@@ -119,6 +132,8 @@ export async function handleCargar(req: any, res: any) {
             dinero_libre_restante,
             items,
             mensaje_usuario,
+            ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
+            ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
           };
         });
     } catch (sheetErr) {
@@ -145,6 +160,8 @@ export async function handleCargar(req: any, res: any) {
           metodo_pago: stx.metodo_pago,
           cuotas: stx.cuotas,
           monto_cuota_mensual: stx.monto_cuota_mensual,
+          ...(stx.es_gasto_fijo !== undefined ? { es_gasto_fijo: stx.es_gasto_fijo } : {}),
+          ...(stx.frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia: stx.frecuencia_recurrencia } : {}),
         });
       } else {
         map.set(stx.id, stx);

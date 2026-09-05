@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { processFinancialCore } from './api/process-financial.js';
 import { handleLogin } from './api/auth/login.js';
@@ -9,9 +8,6 @@ import { handleSession } from './api/auth/session.js';
 import { handleLogout } from './api/auth/logout.js';
 import { handleGuardar } from './api/finanzas/guardar.js';
 import { handleCargar } from './api/finanzas/cargar.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;

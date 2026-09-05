@@ -275,6 +275,33 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
       };
     }
 
+    // 2.1 SPECIAL RULE FOR SEGURO DE DESGRAVAMEN:
+    // Desgravamen insurance is a financial charge / fee tied to credit cards or loans.
+    // Unless the user explicitly configured it as monthly fixed, it MUST remain strictly as a one-time / punctual expense.
+    const isDesgravamen =
+      titleAndConcept.includes('desgravamen') || fullText.includes('desgravamen');
+
+    if (isDesgravamen) {
+      if (tx.es_gasto_fijo === true && tx.frecuencia_recurrencia === 'MENSUAL') {
+        return {
+          ...tx,
+          id: uniqueId,
+          fecha: normalizedFecha,
+          es_gasto_fijo: true,
+          frecuencia_recurrencia: 'MENSUAL' as const,
+          dia_pago_mensual: tx.dia_pago_mensual || getTransactionDueDay({ ...tx, fecha: normalizedFecha }),
+        };
+      }
+      return {
+        ...tx,
+        id: uniqueId,
+        fecha: normalizedFecha,
+        es_gasto_fijo: false,
+        frecuencia_recurrencia: 'PUNTUAL' as const,
+        dia_pago_mensual: undefined,
+      };
+    }
+
     // 3. STRICT USER / EXPLICIT SETTING: If explicitly marked as fixed recurring monthly
     if (tx.es_gasto_fijo === true || tx.frecuencia_recurrencia === 'MENSUAL') {
       return {
@@ -320,41 +347,42 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
         !titleAndConcept.includes('sam'));
 
     const isFixedContract =
-      isGym ||
-      /\balquiler\b/i.test(titleAndConcept) ||
-      /\brenta\b/i.test(titleAndConcept) ||
-      (/\bdepartamento\b/i.test(titleAndConcept) && !titleAndConcept.includes('planta')) ||
-      /\bdepa\b/i.test(titleAndConcept) ||
-      titleAndConcept.includes('internet') ||
-      titleAndConcept.includes('calidda') ||
-      titleAndConcept.includes('cálidda') ||
-      titleAndConcept.includes('servicio de gas') ||
-      titleAndConcept.includes('recibo de gas') ||
-      titleAndConcept.includes('balon de gas') ||
-      titleAndConcept.includes('balón de gas') ||
-      (/\bgas\b/i.test(titleAndConcept) && !titleAndConcept.includes('gasto') && !titleAndConcept.includes('gastron') && !titleAndConcept.includes('gasfitero')) ||
-      /\bluz\b/i.test(titleAndConcept) ||
-      /\bagua\b/i.test(titleAndConcept) ||
-      titleAndConcept.includes('sedapal') ||
-      titleAndConcept.includes('enel') ||
-      titleAndConcept.includes('luz del sur') ||
-      titleAndConcept.includes('netflix') ||
-      titleAndConcept.includes('spotify') ||
-      titleAndConcept.includes('paramount') ||
-      titleAndConcept.includes('icloud') ||
-      titleAndConcept.includes('prime') ||
-      titleAndConcept.includes('disney') ||
-      titleAndConcept.includes('hbo') ||
-      /\bmax\b/i.test(titleAndConcept) ||
-      titleAndConcept.includes('colegio') ||
-      titleAndConcept.includes('escuela') ||
-      titleAndConcept.includes('universidad') ||
-      titleAndConcept.includes('pension') ||
-      titleAndConcept.includes('pensión') ||
-      titleAndConcept.includes('seguro') ||
-      titleAndConcept.includes('arbitrios') ||
-      titleAndConcept.includes('cochera') ||
-      titleAndConcept.includes('estacionamiento');
+      !isDesgravamen &&
+      (isGym ||
+        /\balquiler\b/i.test(titleAndConcept) ||
+        /\brenta\b/i.test(titleAndConcept) ||
+        (/\bdepartamento\b/i.test(titleAndConcept) && !titleAndConcept.includes('planta')) ||
+        /\bdepa\b/i.test(titleAndConcept) ||
+        titleAndConcept.includes('internet') ||
+        titleAndConcept.includes('calidda') ||
+        titleAndConcept.includes('cálidda') ||
+        titleAndConcept.includes('servicio de gas') ||
+        titleAndConcept.includes('recibo de gas') ||
+        titleAndConcept.includes('balon de gas') ||
+        titleAndConcept.includes('balón de gas') ||
+        (/\bgas\b/i.test(titleAndConcept) && !titleAndConcept.includes('gasto') && !titleAndConcept.includes('gastron') && !titleAndConcept.includes('gasfitero')) ||
+        /\bluz\b/i.test(titleAndConcept) ||
+        /\bagua\b/i.test(titleAndConcept) ||
+        titleAndConcept.includes('sedapal') ||
+        titleAndConcept.includes('enel') ||
+        titleAndConcept.includes('luz del sur') ||
+        titleAndConcept.includes('netflix') ||
+        titleAndConcept.includes('spotify') ||
+        titleAndConcept.includes('paramount') ||
+        titleAndConcept.includes('icloud') ||
+        titleAndConcept.includes('prime') ||
+        titleAndConcept.includes('disney') ||
+        titleAndConcept.includes('hbo') ||
+        /\bmax\b/i.test(titleAndConcept) ||
+        titleAndConcept.includes('colegio') ||
+        titleAndConcept.includes('escuela') ||
+        titleAndConcept.includes('universidad') ||
+        titleAndConcept.includes('pension') ||
+        titleAndConcept.includes('pensión') ||
+        (titleAndConcept.includes('seguro') && !titleAndConcept.includes('desgravamen')) ||
+        titleAndConcept.includes('arbitrios') ||
+        titleAndConcept.includes('cochera') ||
+        titleAndConcept.includes('estacionamiento'));
 
     if (tx.tipo_operacion === 'GASTO' && isFixedContract && (tx.cuotas <= 1 || !tx.cuotas)) {
       return {
@@ -956,6 +984,7 @@ export default function App() {
       const classificationInstruction = `\n\n[INSTRUCCIÓN CRÍTICA DE CLASIFICACIÓN DE GASTO FIJO VS PUNTUAL:
 Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categorices automáticamente un gasto como 'fijo' basándote únicamente en nombres o palabras similares:
 - GASTO PUNTUAL O CASUAL (es_gasto_fijo: false, frecuencia_recurrencia: "PUNTUAL"): Incluye compras de gasolina o combustible, reparaciones de lavadoras o electrodomésticos, arreglos mecánicos, repuestos, compras de comida, víveres o salidas. JAMÁS los clasifiques como gastos fijos.
+- SEGURO DE DESGRAVAMEN (es_gasto_fijo: false, frecuencia_recurrencia: "PUNTUAL"): El seguro de desgravamen y comisiones bancarias de tarjeta son gastos puntuales/únicos. NUNCA deben configurarse como gasto fijo mensual por defecto.
 - GASTO FIJO MENSUAL (es_gasto_fijo: true, frecuencia_recurrencia: "MENSUAL"): Reservado ÚNICAMENTE para contratos o servicios periódicos obligatorios que vencen un día fijo todos los meses (alquiler de vivienda, recibo de luz, recibo de agua, internet, plan celular mensual, pensiones de colegio o suscripciones digitales).]`;
 
       const enhancedPrompt = params.textPrompt
@@ -1079,9 +1108,12 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
         allText.includes('víveres') ||
         allText.includes('viveres');
 
+      const isDesgravamen = allText.includes('desgravamen');
+
       const hasFixedKeywords =
         !isCleaningOrGrocery &&
         !isCasualExpense &&
+        !isDesgravamen &&
         (allText.includes('alquiler') ||
           (/\bdepartamento\b/i.test(allText) && !allText.includes('planta')) ||
           /\bdepa\b/i.test(allText) ||
@@ -1102,7 +1134,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
           allText.includes('pensión') ||
           allText.includes('gym') ||
           allText.includes('gimnasio') ||
-          allText.includes('seguro') ||
+          (allText.includes('seguro') && !allText.includes('desgravamen')) ||
           allText.includes('arbitrios') ||
           allText.includes('netflix') ||
           allText.includes('spotify') ||
@@ -1117,7 +1149,7 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
           allText.includes('cada mes') ||
           allText.includes('de cada mes'));
 
-      if (isCasualExpense || isCleaningOrGrocery) {
+      if (isCasualExpense || isCleaningOrGrocery || isDesgravamen) {
         isGastoFijo = false;
       } else if (hasFixedKeywords) {
         isGastoFijo = true;

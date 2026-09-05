@@ -43,6 +43,8 @@ export async function handleGuardar(req: any, res: any) {
       'Dinero Libre Restante',
       'Detalle / Conceptos',
       'Mensaje Asistente',
+      'Tipo Gasto (Fijo / Único)',
+      'Frecuencia Recurrencia',
     ];
 
     const transactionRows = (transactions || []).map((tx: any) => [
@@ -64,6 +66,8 @@ export async function handleGuardar(req: any, res: any) {
             .join(' | ')
         : '',
       tx.mensaje_usuario || '',
+      tx.es_gasto_fijo ? 'GASTO FIJO' : 'COMPRA ÚNICA',
+      tx.frecuencia_recurrencia || (tx.es_gasto_fijo ? 'MENSUAL' : 'PUNTUAL'),
     ]);
 
     const transaccionesValues = [headers, ...transactionRows];

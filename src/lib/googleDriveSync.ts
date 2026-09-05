@@ -272,6 +272,18 @@ export async function readDataFromGoogleSheets(
           const dinero_libre_restante = parseCleanAmount(row[8]);
           const detailStr = row[9] || '';
           const mensaje_usuario = row[10] || 'Transacción sincronizada desde Google Sheets.';
+          const rawTipoGasto = (row[11] || '').toString().trim().toUpperCase();
+          const rawFrecuencia = (row[12] || '').toString().trim().toUpperCase();
+          let es_gasto_fijo: boolean | undefined = undefined;
+          if (rawTipoGasto.includes('FIJO')) {
+            es_gasto_fijo = true;
+          } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
+            es_gasto_fijo = false;
+          }
+          let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
+          if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
+            frecuencia_recurrencia = rawFrecuencia;
+          }
 
           // Parse items from detail string
           let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
@@ -313,6 +325,8 @@ export async function readDataFromGoogleSheets(
             dinero_libre_restante,
             items,
             mensaje_usuario,
+            ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
+            ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
           };
         });
     }
@@ -348,6 +362,8 @@ export async function readDataFromGoogleSheets(
         metodo_pago: sheetTx.metodo_pago,
         cuotas: sheetTx.cuotas,
         monto_cuota_mensual: sheetTx.monto_cuota_mensual,
+        ...(sheetTx.es_gasto_fijo !== undefined ? { es_gasto_fijo: sheetTx.es_gasto_fijo } : {}),
+        ...(sheetTx.frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia: sheetTx.frecuencia_recurrencia } : {}),
       });
     } else {
       // New row added in Google Sheet!
@@ -441,6 +457,8 @@ export async function syncDataToGoogleSheets(
     'Dinero Libre Restante',
     'Detalle / Conceptos',
     'Mensaje Asistente',
+    'Tipo Gasto (Fijo / Único)',
+    'Frecuencia Recurrencia',
   ];
 
   const transactionRows = transactions.map((tx) => [
@@ -455,6 +473,8 @@ export async function syncDataToGoogleSheets(
     `${monedaSimbolo} ${tx.dinero_libre_restante.toFixed(2)}`,
     tx.items.map((i) => `${i.concepto} (${i.categoria_principal}: ${monedaSimbolo}${i.monto.toFixed(2)})`).join(' | '),
     tx.mensaje_usuario,
+    tx.es_gasto_fijo ? 'GASTO FIJO' : 'COMPRA ÚNICA',
+    tx.frecuencia_recurrencia || (tx.es_gasto_fijo ? 'MENSUAL' : 'PUNTUAL'),
   ]);
 
   const transaccionesValues = [headers, ...transactionRows];

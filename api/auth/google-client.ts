@@ -213,3 +213,7 @@ function appendSetCookie(res: any, cookieStr: string) {
     res.setHeader('Set-Cookie', [existing, cookieStr]);
   }
 }
+
+export default function handler(_req: any, res: any) {
+  return res.status(404).json({ error: 'Helper module, not an API route' });
+}

@@ -1097,6 +1097,12 @@ export const getRecurringConceptKey = (tx: TransactionRecord): string => {
     return 'combustible_vehiculo';
   }
 
+  // 1.1 Desgravamen insurance is a punctual card/debt charge unless explicitly configured as recurring monthly
+  const isDesgravamen = fullText.includes('desgravamen');
+  if (isDesgravamen && !(tx.es_gasto_fijo === true && tx.frecuencia_recurrencia === 'MENSUAL')) {
+    return tx.id || `desgravamen_${Date.now()}`;
+  }
+
   const titleAndConcept = (
     (tx.titulo_resumen || '') +
     ' ' +
@@ -1296,6 +1302,14 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       t.items.map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
 
+    // 2.1 Desgravamen insurance is a punctual credit/debt fee unless explicitly configured as recurring monthly
+    const isDesgravamen =
+      titleAndConcept.includes('desgravamen') || fullText.includes('desgravamen');
+
+    if (isDesgravamen) {
+      return false;
+    }
+
     // 3. Exclude vehicle fuel / gas stations (variable operational transport expense)
     const isVehicleFuel =
       fullText.includes('gasolina') ||
@@ -1415,7 +1429,7 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       titleAndConcept.includes('universidad') ||
       titleAndConcept.includes('pension') ||
       titleAndConcept.includes('pensión') ||
-      titleAndConcept.includes('seguro') ||
+      (titleAndConcept.includes('seguro') && !titleAndConcept.includes('desgravamen')) ||
       titleAndConcept.includes('paramount') ||
       titleAndConcept.includes('netflix') ||
       titleAndConcept.includes('spotify') ||

@@ -150,9 +150,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     } else if (filterType === 'INGRESO') {
       matchesType = t.tipo_operacion === 'INGRESO';
     } else if (filterType === 'GASTO_FIJO') {
-      matchesType = t.tipo_operacion === 'GASTO' && (t.es_gasto_fijo === true || t.items.some((i) => i.categoria_principal === 'Servicios y Gastos Fijos'));
+      matchesType = t.tipo_operacion === 'GASTO' && t.es_gasto_fijo === true;
     } else if (filterType === 'GASTO_PUNTUAL') {
-      matchesType = t.tipo_operacion === 'GASTO' && t.es_gasto_fijo !== true && !t.items.some((i) => i.categoria_principal === 'Servicios y Gastos Fijos');
+      matchesType = t.tipo_operacion === 'GASTO' && t.es_gasto_fijo !== true;
     } else if (filterType === 'PENDIENTE') {
       matchesType = t.estado_pago === 'PENDIENTE';
     }

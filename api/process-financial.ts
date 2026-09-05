@@ -388,6 +388,7 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
    - 'Crédito y Compromisos': Subcategorías: 'Pagos de tarjeta de crédito', 'Compras diferidas en cuotas', 'Préstamos y amortizaciones'.
 
    - REGLA DE ORO: Las compras de muebles, balanzas, electrodomésticos y reparaciones de artefactos/lavadora NUNCA son gastos fijos; pertenecen a 'Hogar y Mantenimiento' con es_gasto_fijo = false y frecuencia_recurrencia = "PUNTUAL".
+   - REGLA CRÍTICA PARA SEGURO DE DESGRAVAMEN: El seguro de desgravamen y comisiones bancarias de tarjeta son cobros puntuales (es_gasto_fijo = false, frecuencia_recurrencia = "PUNTUAL"). NUNCA deben clasificarse como gasto fijo recurrente o mensual por defecto.
 
 6. Formato de Salida JSON Estricto:
    Debes devolver un objeto JSON válido con los campos exactos solicitados.
