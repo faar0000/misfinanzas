@@ -1709,13 +1709,14 @@ export const getActiveInstallmentForMonth = (
   targetDate: Date
 ): { cuotaActual: number; totalCuotas: number; montoCuota: number } | null => {
   if (tx.tipo_operacion !== 'GASTO') return null;
-  const isCredit =
-    tx.metodo_pago === 'CREDITO' ||
-    tx.cuotas > 1 ||
-    (tx.cuota_actual && tx.cuota_actual > 1) ||
-    (tx.cuotas_restantes && tx.cuotas_restantes > 0);
 
-  if (!isCredit) return null;
+  const totalCuotas = Math.max(1, tx.cuotas || 1);
+  const isCreditInstallment =
+    totalCuotas > 1 ||
+    (tx.cuota_actual !== undefined && tx.cuota_actual > 1) ||
+    (tx.cuotas_restantes !== undefined && tx.cuotas_restantes > 0);
+
+  if (!isCreditInstallment) return null;
 
   const normalizedTxDate = normalizeDateToISO(tx.fecha);
   const parts = normalizedTxDate.split('-');
@@ -1726,9 +1727,12 @@ export const getActiveInstallmentForMonth = (
   const targetMonth = targetDate.getMonth();
 
   const diffMonths = (targetYear - txYear) * 12 + (targetMonth - txMonth);
-  const initialCuota = tx.cuota_actual || 1;
+  const initialCuota =
+    tx.cuota_actual ||
+    (tx.cuotas_restantes !== undefined
+      ? Math.max(1, totalCuotas - tx.cuotas_restantes + 1)
+      : 1);
   const cuotaEnTargetMonth = initialCuota + diffMonths;
-  const totalCuotas = Math.max(1, tx.cuotas || 1);
 
   if (cuotaEnTargetMonth >= 1 && cuotaEnTargetMonth <= totalCuotas) {
     return {

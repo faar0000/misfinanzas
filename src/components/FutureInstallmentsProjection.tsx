@@ -222,12 +222,11 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
     entitiesMap[entity].monthlyTotal += activeInst.montoCuota;
   });
 
-  // Also register any entities present in credit transactions so they appear in filters
+  // Also register any entities present in installment credit transactions so they appear in filters
   const allCreditTxs = transactions.filter(
     (t) =>
       t.tipo_operacion === 'GASTO' &&
-      (t.metodo_pago === 'CREDITO' ||
-        t.cuotas > 1 ||
+      ((t.cuotas && t.cuotas > 1) ||
         (t.cuota_actual && t.cuota_actual > 1) ||
         (t.cuotas_restantes && t.cuotas_restantes > 0))
   );

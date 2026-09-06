@@ -377,6 +377,21 @@ REGLAS DE NEGOCIO Y CÁLCULO DE SALDO EN BANCO:
 4. Lógica de Tarjetas de Crédito, Entidad Financiera y Cuotas:
    - Detección de Entidad Financiera / Banco: Extrae el nombre del banco o tarjeta si se menciona (ej: "Interbank", "BCP", "BBVA", "Scotiabank", "Diners", "CMR", "Efectivo").
    - Si se menciona "tarjeta de crédito", "tarjeta credito", "cuota", "interbank", "bcp", "bbva", etc., DEBES clasificar 'metodo_pago' = 'CREDITO'.
+   - Extracción precisa de Cuotas y Montos:
+     * Para compras diferidas (ej: "compré laptop por 1200 a 4 cuotas con tarjeta BCP"):
+       - 'cuotas': 4
+       - 'monto_total': 1200
+       - 'monto_cuota_mensual': 300
+       - 'cuota_actual': 1
+       - 'cuotas_restantes': 3
+       - 'subcategoria': 'Compras diferidas en cuotas'
+     * Para pago de cuota específica de deuda o préstamo (ej: "pagué cuota 3 de 10 de mi préstamo por 450 soles"):
+       - 'cuota_actual': 3
+       - 'cuotas': 10
+       - 'cuotas_restantes': 7
+       - 'monto_cuota_mensual': 450
+       - 'monto_total': 450
+       - 'subcategoria': 'Préstamos y amortizaciones' o 'Pagos de tarjeta de crédito'
 
 5. Clasificación Estricta de Categorías Principales y Subcategorías Estandarizadas:
    - 'Servicios y Gastos Fijos' (es_gasto_fijo = true, frecuencia_recurrencia = "MENSUAL"): Subcategorías: 'Alquiler de departamento', 'Mantenimiento de edificio', 'Luz / Electricidad', 'Agua', 'Internet y Telefonía', 'Gas domiciliario', 'Suscripciones (gimnasio, streaming)', 'Pensiones y Seguros'.
