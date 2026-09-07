@@ -1,4 +1,4 @@
-import { getSessionFromReq, clearSessionCookie } from './_google-client.js';
+import { getSessionFromReq, clearSessionCookie } from '../../lib/google-client.js';
 
 export async function handleSession(req: any, res: any) {
   if (req.method === 'DELETE' || (req.method === 'POST' && req.query?.action === 'logout')) {

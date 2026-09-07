@@ -1,4 +1,4 @@
-import { clearSessionCookie } from './_google-client.js';
+import { clearSessionCookie } from '../../lib/google-client.js';
 
 export async function handleLogout(req: any, res: any) {
   clearSessionCookie(res);
