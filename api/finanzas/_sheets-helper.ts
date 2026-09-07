@@ -1,4 +1,4 @@
-import { getOAuth2Client, getSessionFromReq, setSessionCookie, GoogleSessionData } from '../auth/google-client.js';
+import { getOAuth2Client, getSessionFromReq, setSessionCookie, GoogleSessionData } from '../auth/_google-client.js';
 
 export const SPREADSHEET_TITLE = 'Control Financiero Personal';
 
