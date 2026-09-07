@@ -1,4 +1,4 @@
-import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 
 export function parseCookie(header: string): Record<string, string> {
@@ -103,7 +103,7 @@ export function getOAuth2Client(req?: any) {
     );
   }
 
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  return new OAuth2Client(clientId, clientSecret, redirectUri);
 }
 
 /**

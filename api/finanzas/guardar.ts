@@ -153,7 +153,8 @@ export async function handleGuardar(req: any, res: any) {
     const isAuthErr =
       err?.code === '401_UNAUTHENTICATED' ||
       err?.statusCode === 401 ||
-      err?.message?.includes('401_UNAUTHENTICATED') ||
+      err?.status === 401 ||
+      err?.message?.includes('401') ||
       err?.code === 401;
 
     if (!isAuthErr) {

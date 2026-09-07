@@ -1,4 +1,3 @@
-import { google } from 'googleapis';
 import {
   getOAuth2Client,
   setSessionCookie,
@@ -32,9 +31,20 @@ export async function handleCallback(req: any, res: any) {
     const existingSession = getSessionFromReq(req);
     const refreshToken = tokens.refresh_token || existingSession?.tokens?.refresh_token || null;
 
-    // Fetch user profile info
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userinfo = await oauth2.userinfo.get();
+    // Fetch user profile info via lightweight Google userinfo endpoint
+    let userinfoData: any = {};
+    try {
+      if (tokens.access_token) {
+        const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        if (userRes.ok) {
+          userinfoData = await userRes.json();
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('Could not fetch Google user profile info:', fetchErr);
+    }
 
     const sessionData: GoogleSessionData = {
       tokens: {
@@ -45,10 +55,10 @@ export async function handleCallback(req: any, res: any) {
         expiry_date: tokens.expiry_date || null,
       },
       user: {
-        id: userinfo.data.id || 'google-user',
-        email: userinfo.data.email || null,
-        displayName: userinfo.data.name || userinfo.data.email || 'Usuario Google',
-        photoURL: userinfo.data.picture || null,
+        id: userinfoData.id || 'google-user',
+        email: userinfoData.email || null,
+        displayName: userinfoData.name || userinfoData.email || 'Usuario Google',
+        photoURL: userinfoData.picture || null,
       },
       createdAt: Date.now(),
     };
