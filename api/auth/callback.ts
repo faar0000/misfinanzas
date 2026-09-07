@@ -3,7 +3,7 @@ import {
   setSessionCookie,
   getSessionFromReq,
   GoogleSessionData,
-} from './google-client.js';
+} from './_google-client.js';
 
 export async function handleCallback(req: any, res: any) {
   try {
