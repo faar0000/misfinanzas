@@ -1,4 +1,4 @@
-import { getOAuth2Client, GOOGLE_SCOPES } from './google-client.js';
+import { getOAuth2Client, GOOGLE_SCOPES } from './_google-client.js';
 
 export async function handleLogin(req: any, res: any) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
