@@ -1,4 +1,4 @@
-import { getAuthenticatedClients, findOrCreateSpreadsheet } from './sheets-helper.js';
+import { getAuthenticatedClients, findOrCreateSpreadsheet } from './_sheets-helper.js';
 
 export const parseCleanAmount = (val: any): number => {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
