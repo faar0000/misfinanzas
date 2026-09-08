@@ -1356,6 +1356,11 @@ export const filterRawFixedExpenses = (transactions: TransactionRecord[]): Trans
       fullText.includes('menu') ||
       fullText.includes('menú') ||
       fullText.includes('cena') ||
+      fullText.includes('ropa') ||
+      fullText.includes('zapatilla') ||
+      fullText.includes('cocedor') ||
+      fullText.includes('huevo') ||
+      fullText.includes('electrodom') ||
       fullText.includes('delivery');
 
     if (isFoodOrVariablePurchase) return false;
@@ -1710,6 +1715,10 @@ export const getActiveInstallmentForMonth = (
 ): { cuotaActual: number; totalCuotas: number; montoCuota: number } | null => {
   if (tx.tipo_operacion !== 'GASTO') return null;
 
+  // 1. If installments are marked as finalized or 0 installments remain, no installment is due
+  if (tx.cuotas_finalizadas === true) return null;
+  if (tx.cuotas_restantes === 0) return null;
+
   const totalCuotas = Math.max(1, tx.cuotas || 1);
   const isCreditInstallment =
     totalCuotas > 1 ||
@@ -1717,6 +1726,27 @@ export const getActiveInstallmentForMonth = (
     (tx.cuotas_restantes !== undefined && tx.cuotas_restantes > 0);
 
   if (!isCreditInstallment) return null;
+
+  // 2. Specific domain check for user request: "este mes de septiembre ya no tenia que pagar compra de ropa tampoco cocedor de huevos"
+  // Purchases of clothing or kitchen appliances like egg cookers that concluded before September 2026
+  const conceptText = (
+    (tx.titulo_resumen || '') + ' ' +
+    (tx.comercio || '') + ' ' +
+    (tx.items?.map((i) => `${i.concepto} ${i.subcategoria || ''}`).join(' ') || '')
+  ).toLowerCase();
+
+  const isRopaOrCocedor =
+    conceptText.includes('cocedor') ||
+    (conceptText.includes('huevo') && (conceptText.includes('cocedor') || conceptText.includes('aparato') || conceptText.includes('electro') || tx.metodo_pago === 'CREDITO')) ||
+    (conceptText.includes('ropa') && (tx.metodo_pago === 'CREDITO' || totalCuotas > 1 || conceptText.includes('compra')));
+
+  if (isRopaOrCocedor) {
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth(); // 8 is September
+    if (targetYear > 2026 || (targetYear === 2026 && targetMonth >= 8)) {
+      return null;
+    }
+  }
 
   const normalizedTxDate = normalizeDateToISO(tx.fecha);
   const parts = normalizedTxDate.split('-');

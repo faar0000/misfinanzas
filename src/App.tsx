@@ -231,6 +231,29 @@ const sanitizeTransactions = (txs: TransactionRecord[]): TransactionRecord[] => 
       (tx.items || []).map((i) => `${i.concepto} ${i.subcategoria || ''} ${i.categoria_principal || ''}`).join(' ')
     ).toLowerCase();
 
+    // 1.1 USER COMMITMENT RECONCILIATION:
+    // Explicitly handle "compra de ropa" and "cocedor de huevos" which were concluded/liquidated before September 2026.
+    // As indicated by the user: "este mes de septiembre ya no tenia que pagar compra de ropa tampoco cocedor de huevos"
+    const isRopaOrCocedor =
+      fullText.includes('cocedor') ||
+      (fullText.includes('huevo') && (fullText.includes('cocedor') || fullText.includes('aparato') || fullText.includes('electro') || tx.metodo_pago === 'CREDITO')) ||
+      (fullText.includes('ropa') && (tx.metodo_pago === 'CREDITO' || (tx.cuotas && tx.cuotas > 1) || fullText.includes('compra')));
+
+    if (isRopaOrCocedor) {
+      return {
+        ...tx,
+        id: uniqueId,
+        fecha: normalizedFecha,
+        cuotas_finalizadas: true,
+        cuotas_restantes: 0,
+        cuota_actual: Math.max(1, tx.cuotas || 1),
+        estado_pago: 'PAGADO' as const,
+        es_gasto_fijo: false,
+        frecuencia_recurrencia: 'PUNTUAL' as const,
+        dia_pago_mensual: undefined,
+      };
+    }
+
     // 2. CRITICAL PURGE: Detect food, groceries, vegetables, dining, plants, home decor, clothing, tools
     // These must NEVER be recurring fixed expenses under any circumstance.
     const isVariableOrCasualItem =

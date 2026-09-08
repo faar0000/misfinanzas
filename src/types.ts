@@ -26,6 +26,7 @@ export interface TransactionRecord {
   entidad_financiera?: string; // e.g. "Interbank", "BCP", "BBVA", "Scotiabank"
   cuota_actual?: number; // e.g. 3 (if registering the 3rd installment)
   cuotas_restantes?: number; // e.g. 2 (if 2 installments remain)
+  cuotas_finalizadas?: boolean; // True if debt/installments are fully paid off or liquidated
   // Classification: Fixed Recurrent Expense vs One-time Purchase
   es_gasto_fijo?: boolean; // True if it's a recurring monthly fixed commitment (Rent, Utilities, Subscriptions, Tuition, etc.)
   frecuencia_recurrencia?: 'MENSUAL' | 'PUNTUAL';

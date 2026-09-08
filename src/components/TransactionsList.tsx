@@ -372,9 +372,15 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
                                 {/* Installments info */}
                                 {tx.cuotas > 1 && (
-                                  <span className="px-1 py-0.2 bg-indigo-50 text-indigo-800 text-[9px] font-bold rounded-xs border border-indigo-200">
-                                    {tx.cuota_actual || 1}/{tx.cuotas}c
-                                  </span>
+                                  tx.cuotas_finalizadas || tx.cuotas_restantes === 0 ? (
+                                    <span className="px-1 py-0.2 bg-emerald-50 text-emerald-800 text-[9px] font-bold rounded-xs border border-emerald-300">
+                                      {tx.cuotas}c Liquidadas
+                                    </span>
+                                  ) : (
+                                    <span className="px-1 py-0.2 bg-indigo-50 text-indigo-800 text-[9px] font-bold rounded-xs border border-indigo-200">
+                                      {tx.cuota_actual || 1}/{tx.cuotas}c
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>
@@ -496,6 +502,35 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 </button>
                               )}
 
+                              {/* Toggle Liquidar Cuotas if Credit purchase */}
+                              {(tx.cuotas > 1 || tx.metodo_pago === 'CREDITO') && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const willFinalize = !(tx.cuotas_finalizadas || tx.cuotas_restantes === 0);
+                                    onUpdateTransaction?.(tx.id, {
+                                      cuotas_finalizadas: willFinalize,
+                                      cuotas_restantes: willFinalize ? 0 : Math.max(1, (tx.cuotas || 1) - (tx.cuota_actual || 1)),
+                                      cuota_actual: willFinalize ? Math.max(1, tx.cuotas || 1) : tx.cuota_actual,
+                                      estado_pago: willFinalize ? 'PAGADO' : tx.estado_pago,
+                                    });
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-xs border transition-colors cursor-pointer ${
+                                    tx.cuotas_finalizadas || tx.cuotas_restantes === 0
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
+                                  }`}
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>
+                                    {tx.cuotas_finalizadas || tx.cuotas_restantes === 0
+                                      ? 'Cuotas Liquidadas (Reactivar)'
+                                      : 'Liquidar Cuotas'}
+                                  </span>
+                                </button>
+                              )}
+
                               {/* Delete Button */}
                               <button
                                 type="button"
@@ -608,6 +643,51 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                       className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                   </div>
+
+                                  {/* Campos de Cuotas para compras con tarjeta de crédito */}
+                                  {(tx.cuotas > 1 || tx.metodo_pago === 'CREDITO') && (
+                                    <>
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                          Cuotas Totales
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max="60"
+                                          value={tx.cuotas || 1}
+                                          onChange={(e) => {
+                                            const c = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                            onUpdateTransaction(tx.id, {
+                                              cuotas: c,
+                                              monto_cuota_mensual: tx.monto_total ? tx.monto_total / c : 0,
+                                            });
+                                          }}
+                                          className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                        />
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                          Cuotas Restantes
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={tx.cuotas || 1}
+                                          value={tx.cuotas_restantes ?? (tx.cuotas_finalizadas ? 0 : Math.max(0, (tx.cuotas || 1) - (tx.cuota_actual || 1)))}
+                                          onChange={(e) => {
+                                            const rest = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                            onUpdateTransaction(tx.id, {
+                                              cuotas_restantes: rest,
+                                              cuotas_finalizadas: rest === 0,
+                                            });
+                                          }}
+                                          className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-xs text-xs text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                        />
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             )}

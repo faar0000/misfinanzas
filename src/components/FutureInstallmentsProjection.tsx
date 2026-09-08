@@ -23,6 +23,7 @@ import {
   Car,
   GraduationCap,
   Shield,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { TransactionRecord } from '../types';
 import {
@@ -160,6 +161,47 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
   };
 
   const [confirmCancelTx, setConfirmCancelTx] = useState<TransactionRecord | null>(null);
+  const [confirmFinalizeTx, setConfirmFinalizeTx] = useState<TransactionRecord | null>(null);
+  const [editingInstallmentTx, setEditingInstallmentTx] = useState<TransactionRecord | null>(null);
+  const [editCuotasTotal, setEditCuotasTotal] = useState<number>(1);
+  const [editCuotaActual, setEditCuotaActual] = useState<number>(1);
+  const [editCuotasRestantes, setEditCuotasRestantes] = useState<number>(0);
+  const [editMontoCuota, setEditMontoCuota] = useState<number>(0);
+
+  const handleOpenEditInstallment = (tx: TransactionRecord) => {
+    setEditingInstallmentTx(tx);
+    const total = Math.max(1, tx.cuotas || 1);
+    const actual = Math.max(1, tx.cuota_actual || 1);
+    setEditCuotasTotal(total);
+    setEditCuotaActual(actual);
+    setEditCuotasRestantes(tx.cuotas_restantes !== undefined ? tx.cuotas_restantes : Math.max(0, total - actual));
+    setEditMontoCuota(tx.monto_cuota_mensual || (tx.monto_total ? tx.monto_total / total : 0));
+  };
+
+  const handleSaveEditInstallment = () => {
+    if (!editingInstallmentTx || !onUpdateTransaction) return;
+    const isFinished = editCuotasRestantes === 0 || editCuotaActual >= editCuotasTotal;
+    onUpdateTransaction(editingInstallmentTx.id, {
+      cuotas: editCuotasTotal,
+      cuota_actual: editCuotaActual,
+      cuotas_restantes: editCuotasRestantes,
+      monto_cuota_mensual: editMontoCuota,
+      cuotas_finalizadas: isFinished,
+      estado_pago: isFinished ? 'PAGADO' : editingInstallmentTx.estado_pago,
+    });
+    setEditingInstallmentTx(null);
+  };
+
+  const handleConfirmFinalize = () => {
+    if (!confirmFinalizeTx || !onUpdateTransaction) return;
+    onUpdateTransaction(confirmFinalizeTx.id, {
+      cuotas_finalizadas: true,
+      cuotas_restantes: 0,
+      cuota_actual: Math.max(1, confirmFinalizeTx.cuotas || 1),
+      estado_pago: 'PAGADO',
+    });
+    setConfirmFinalizeTx(null);
+  };
 
   // 1. Identify Gastos Fijos Recurrentes Mensuales strictly using the last paid month value for variable services
   const rawFixedExpensesList = getLatestFixedExpenses(transactions);
@@ -249,6 +291,8 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
     totalFixedExpenses: number;
     totalMonthlyCommitments: number;
     itemsList: {
+      txId: string;
+      tx: TransactionRecord;
       concepto: string;
       cuotaActual: number;
       totalCuotas: number;
@@ -271,6 +315,8 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
 
     let totalCuotas = 0;
     const itemsList: {
+      txId: string;
+      tx: TransactionRecord;
       concepto: string;
       cuotaActual: number;
       totalCuotas: number;
@@ -286,6 +332,8 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
       if (activeInst) {
         totalCuotas += activeInst.montoCuota;
         itemsList.push({
+          txId: tx.id,
+          tx,
           concepto: tx.titulo_resumen || tx.items[0]?.concepto || 'Compra en cuotas',
           cuotaActual: activeInst.cuotaActual,
           totalCuotas: activeInst.totalCuotas,
@@ -712,7 +760,7 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                               </span>
                             </div>
 
-                            <div className="flex items-center justify-between gap-1 text-[9px] sm:text-[10px]">
+                            <div className="flex items-center justify-between gap-1 text-[9px] sm:text-[10px] mb-1">
                               <span className="text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded-xs truncate max-w-[110px] sm:max-w-[120px]">
                                 {item.entidad}
                               </span>
@@ -720,6 +768,29 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                                 Cuota {item.cuotaActual}/{item.totalCuotas}
                               </span>
                             </div>
+
+                            {onUpdateTransaction && (
+                              <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditInstallment(item.tx)}
+                                  className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 text-slate-600 hover:text-indigo-700 hover:bg-slate-100 border border-slate-200 rounded-xs cursor-pointer font-medium transition-colors"
+                                  title="Ajustar número de cuotas o cuotas restantes"
+                                >
+                                  <SlidersHorizontal className="w-2.5 h-2.5 text-slate-500" />
+                                  <span>Ajustar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmFinalizeTx(item.tx)}
+                                  className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-xs cursor-pointer font-semibold transition-colors"
+                                  title="Marcar como ya pagada (no pagar más cuotas a futuro)"
+                                >
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Ya liquidada</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -777,6 +848,160 @@ export const FutureInstallmentsProjection: React.FC<FutureInstallmentsProjection
                 className="px-3.5 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded cursor-pointer shadow-xs transition-colors"
               >
                 Sí, cancelar suscripción
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para liquidar / finalizar cuotas de crédito */}
+      {confirmFinalizeTx && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full p-5 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-emerald-600 mb-2">
+              <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm">Liquidar Cuotas de Tarjeta</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              ¿Deseas marcar la compra en cuotas{' '}
+              <strong className="text-slate-900 font-bold">
+                "{confirmFinalizeTx.titulo_resumen || confirmFinalizeTx.items[0]?.concepto || 'Compra en cuotas'}"
+              </strong>{' '}
+              como <span className="text-emerald-700 font-semibold">totalmente liquidada</span>?
+              <br />
+              <br />
+              Al liquidar, ya no se proyectará ningún cobro de esta compra en septiembre ni en los meses futuros.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setConfirmFinalizeTx(null)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded cursor-pointer transition-colors"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmFinalize}
+                className="px-3.5 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer shadow-xs transition-colors"
+              >
+                Sí, marcar como liquidada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para editar / ajustar cuotas de una compra */}
+      {editingInstallmentTx && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full p-5 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
+              <div className="flex items-center gap-2 text-indigo-700 font-bold text-sm">
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>Ajustar Cuotas de Tarjeta</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingInstallmentTx(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-3 font-semibold truncate">
+              {editingInstallmentTx.titulo_resumen || editingInstallmentTx.items[0]?.concepto}
+            </p>
+
+            <div className="space-y-3 mb-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                    Cuotas Totales
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={editCuotasTotal}
+                    onChange={(e) => setEditCuotasTotal(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-slate-900 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                    Cuota Actual
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={editCuotasTotal}
+                    value={editCuotaActual}
+                    onChange={(e) => {
+                      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                      setEditCuotaActual(val);
+                      setEditCuotasRestantes(Math.max(0, editCuotasTotal - val));
+                    }}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-slate-900 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                    Cuotas Restantes
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={editCuotasTotal}
+                    value={editCuotasRestantes}
+                    onChange={(e) => setEditCuotasRestantes(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-slate-900 font-medium"
+                  />
+                  <span className="text-[9px] text-slate-500">0 = liquidada</span>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                    Monto Cuota ({monedaSimbolo})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editMontoCuota}
+                    onChange={(e) => setEditMontoCuota(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-slate-900 font-mono font-medium"
+                  />
+                </div>
+              </div>
+
+              {editCuotasRestantes === 0 && (
+                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-[11px] text-emerald-800 flex items-center gap-1.5 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Al tener 0 cuotas restantes, se considerará liquidada y no figurará en meses futuros.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingInstallmentTx(null)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditInstallment}
+                className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded cursor-pointer shadow-xs transition-colors"
+              >
+                Guardar Ajuste
               </button>
             </div>
           </div>
