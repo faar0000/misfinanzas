@@ -18,6 +18,7 @@ import { TransactionsList } from './components/TransactionsList';
 import { FutureInstallmentsProjection } from './components/FutureInstallmentsProjection';
 import { FinancialAnalyticsChart } from './components/FinancialAnalyticsChart';
 import { BudgetSettingsModal } from './components/BudgetSettingsModal';
+import { ConfirmImportModal } from './components/ConfirmImportModal';
 import { UpcomingDueDateReminderBanner } from './components/UpcomingDueDateReminderBanner';
 import { CategoryBudgetsPage } from './components/CategoryBudgetsPage';
 import {
@@ -558,13 +559,32 @@ export default function App() {
     return localStorage.getItem('asistente_financiero_sheet_id');
   });
   const [tokenNeedsRefresh, setTokenNeedsRefresh] = useState<boolean>(false);
+  const [isDriveConnecting, setIsDriveConnecting] = useState(false);
+  const [driveSyncError, setDriveSyncError] = useState<string | null>(null);
+  const [isDriveImporting, setIsDriveImporting] = useState(false);
+  const [isConfirmImportOpen, setIsConfirmImportOpen] = useState(false);
+  const [driveNotification, setDriveNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
 
   // Automatic saving tracking refs to ensure seamless background sync on each record
   const isInitialMountRef = useRef(true);
   const skipNextAutoSyncRef = useRef(false);
+  const suppressAutoSyncUntilRef = useRef<number>(0);
   const autoSyncDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isSyncingRef = useRef(false);
   const pendingSyncTxsRef = useRef<TransactionRecord[] | null>(null);
+
+  // Auto-dismiss drive notifications after 7 seconds
+  useEffect(() => {
+    if (driveNotification) {
+      const timer = setTimeout(() => {
+        setDriveNotification(null);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [driveNotification]);
 
   // Initialize Auth state: keep user account connected across days
   useEffect(() => {
@@ -583,6 +603,8 @@ export default function App() {
   }, []);
 
   const handleGoogleLogin = async () => {
+    setIsDriveConnecting(true);
+    setDriveSyncError(null);
     try {
       const res = await googleSignIn();
       if (res) {
@@ -590,37 +612,39 @@ export default function App() {
         setAccessToken(res.accessToken);
 
         // Check if existing file has transactions in Google Drive
-        const fileInfo = await getOrCreateFinancialSpreadsheet(res.accessToken, 'Control Financiero Personal');
-        setSpreadsheetId(fileInfo.id);
-        setSpreadsheetUrl(fileInfo.url);
-        localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
-        localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
+        try {
+          const fileInfo = await getOrCreateFinancialSpreadsheet(res.accessToken, 'Control Financiero Personal');
+          setSpreadsheetId(fileInfo.id);
+          setSpreadsheetUrl(fileInfo.url);
+          localStorage.setItem('asistente_financiero_sheet_id', fileInfo.id);
+          localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
 
-        if (!fileInfo.isNew) {
-          // Spreadsheet existed! Attempt to load data from Drive first
-          const driveData = await readDataFromGoogleSheets(res.accessToken, fileInfo.id);
-          if (driveData && driveData.transactions && driveData.transactions.length > 0) {
-            skipNextAutoSyncRef.current = true;
-            const sorted = sortTransactionsByDateDesc(driveData.transactions);
-            setTransactions(sorted);
-            localStorage.setItem('asistente_financiero_txs', JSON.stringify(sorted));
+          if (!fileInfo.isNew) {
+            // Spreadsheet existed! Attempt to load data from Drive first
+            const driveData = await readDataFromGoogleSheets(res.accessToken, fileInfo.id);
+            if (driveData && driveData.transactions && driveData.transactions.length > 0) {
+              skipNextAutoSyncRef.current = true;
+              const sorted = sortTransactionsByDateDesc(driveData.transactions);
+              setTransactions(sorted);
+              localStorage.setItem('asistente_financiero_txs', JSON.stringify(sorted));
 
-            if (driveData.config) setConfig((prev) => ({ ...prev, ...driveData.config }));
-            if (driveData.categoryBudgets) setCategoryBudgets(driveData.categoryBudgets);
+              if (driveData.config) setConfig((prev) => ({ ...prev, ...driveData.config }));
+              if (driveData.categoryBudgets) setCategoryBudgets(driveData.categoryBudgets);
 
-            const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            setLastDriveSyncedAt(nowFormatted);
-            localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
-            setTokenNeedsRefresh(false);
-
-            alert(`✅ ¡Google Drive conectado! Se recuperaron ${sorted.length} transacciones sincronizadas previamente.`);
-            return;
+              const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              setLastDriveSyncedAt(nowFormatted);
+              localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
+              setTokenNeedsRefresh(false);
+              return;
+            }
           }
-        }
 
-        setTokenNeedsRefresh(false);
-        // If new or empty sheet, push local transactions to Drive
-        triggerDriveSync(res.accessToken, transactions);
+          setTokenNeedsRefresh(false);
+          // If new or empty sheet, push local transactions to Drive
+          triggerDriveSync(res.accessToken, transactions);
+        } catch (syncErr: any) {
+          console.warn('Error inicializando archivo en Google Drive:', syncErr);
+        }
       }
     } catch (err: any) {
       console.warn('Inicio de sesión de Google cancelado o fallido:', err);
@@ -630,18 +654,24 @@ export default function App() {
         !errMsg.includes('cancelled-popup-request') &&
         !errMsg.includes('Database is closing')
       ) {
-        alert(`⚠️ No se pudo conectar con Google: ${errMsg}\n\nSi estás en un navegador privado o iframe, intenta permitir ventanas emergentes o volver a hacer clic en Conectar.`);
+        setDriveSyncError(`No se pudo conectar a Google Drive: ${errMsg}. Si el navegador bloqueó las ventanas emergentes, permítelas para esta página o abre la app en una nueva pestaña.`);
       }
+    } finally {
+      setIsDriveConnecting(false);
     }
   };
 
-  const handleImportFromDrive = async (tokenToUse?: string | null) => {
-    const confirmLoad = window.confirm(
-      '⚠️ ATENCIÓN: Cargar datos desde Google Drive restaurará la última copia de respaldo guardada en la nube y reemplazará tus registros locales actuales.\n\n' +
-      '¿Deseas continuar?\n\n' +
-      '💡 Importante: Si has registrado o editado compras recientemente, te recomendamos hacer clic en "Cancelar" y presionar primero "Guardar" para actualizar tu respaldo en la nube.'
-    );
-    if (!confirmLoad) return;
+  const handleImportFromDrive = () => {
+    setIsConfirmImportOpen(true);
+  };
+
+  const executeImportFromDrive = async (tokenToUse?: string | null) => {
+    setIsConfirmImportOpen(false);
+    setIsDriveImporting(true);
+    setDriveSyncError(null);
+
+    // Suppress any auto-sync for the next 10 seconds so the loaded state is not overwritten
+    suppressAutoSyncUntilRef.current = Date.now() + 10000;
 
     let activeToken = tokenToUse || (await getValidGoogleAccessToken()) || accessToken;
     if (!activeToken && googleUser) {
@@ -649,14 +679,16 @@ export default function App() {
       if (activeToken) setAccessToken(activeToken);
     }
     if (!activeToken) {
+      setIsDriveImporting(false);
       await handleGoogleLogin();
       return;
     }
     setTokenNeedsRefresh(false);
 
-    setIsDriveSyncing(true);
     try {
       const fileInfo = await getOrCreateFinancialSpreadsheet(activeToken, 'Control Financiero Personal');
+      const targetSheetId = fileInfo.id || spreadsheetId || localStorage.getItem('asistente_financiero_sheet_id') || '';
+
       if (fileInfo.id) {
         setSpreadsheetId(fileInfo.id);
         setSpreadsheetUrl(fileInfo.url);
@@ -664,27 +696,48 @@ export default function App() {
         localStorage.setItem('asistente_financiero_sheet_url', fileInfo.url);
       }
 
-      const importedData = await readDataFromGoogleSheets(activeToken, fileInfo.id || spreadsheetId || '');
+      if (!targetSheetId) {
+        throw new Error('No se encontró una planilla en Google Drive.');
+      }
+
+      const importedData = await readDataFromGoogleSheets(activeToken, targetSheetId);
       if (importedData && importedData.transactions && importedData.transactions.length > 0) {
-        skipNextAutoSyncRef.current = true;
+        // Keep auto-sync suppressed during state ingestion
+        suppressAutoSyncUntilRef.current = Date.now() + 10000;
+
         const sorted = sortTransactionsByDateDesc(importedData.transactions);
         setTransactions(sorted);
         localStorage.setItem('asistente_financiero_txs', JSON.stringify(sorted));
 
         if (importedData.config) {
           setConfig((prev) => ({ ...prev, ...importedData.config }));
+          localStorage.setItem('asistente_financiero_config', JSON.stringify({ ...config, ...importedData.config }));
         }
         if (importedData.categoryBudgets) {
           setCategoryBudgets(importedData.categoryBudgets);
+          localStorage.setItem('asistente_financiero_category_budgets', JSON.stringify(importedData.categoryBudgets));
         }
 
         const nowFormatted = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         setLastDriveSyncedAt(nowFormatted);
         localStorage.setItem('asistente_financiero_last_sync', nowFormatted);
 
-        alert(`✅ Carga exitosa: Se importaron ${sorted.length} transacciones desde tu Google Drive.`);
+        setDriveNotification({
+          type: 'success',
+          message: `✅ Carga exitosa: Se sincronizaron ${sorted.length} transacciones desde tu Google Drive.`,
+        });
+      } else if (importedData && (importedData.config || importedData.categoryBudgets)) {
+        if (importedData.config) setConfig((prev) => ({ ...prev, ...importedData.config }));
+        if (importedData.categoryBudgets) setCategoryBudgets(importedData.categoryBudgets);
+        setDriveNotification({
+          type: 'info',
+          message: 'ℹ️ Se sincronizaron configuraciones y presupuestos desde Google Drive (no se encontraron registros de transacciones en la planilla).',
+        });
       } else {
-        alert('ℹ️ No se encontraron transacciones guardadas en tu planilla de Google Drive.');
+        setDriveNotification({
+          type: 'info',
+          message: 'ℹ️ No se encontraron registros de transacciones en la planilla de Google Drive.',
+        });
       }
     } catch (err: any) {
       console.error('Error al importar desde Google Drive:', err);
@@ -693,13 +746,17 @@ export default function App() {
         const freshToken = await refreshGoogleTokenInteractive(googleUser?.email);
         if (freshToken) {
           setAccessToken(freshToken);
-          handleImportFromDrive(freshToken);
+          executeImportFromDrive(freshToken);
           return;
         }
       }
-      alert(`Ocurrió un error al cargar datos desde Google Drive: ${err?.message || 'Error de conexión'}`);
+      setDriveSyncError(errMsg || 'Error de conexión');
+      setDriveNotification({
+        type: 'error',
+        message: `Error al cargar datos desde Google Drive: ${err?.message || 'Error de conexión'}`,
+      });
     } finally {
-      setIsDriveSyncing(false);
+      setIsDriveImporting(false);
     }
   };
 
@@ -774,7 +831,10 @@ export default function App() {
       setTokenNeedsRefresh(false);
 
       if (isManual) {
-        alert(`✅ Sincronización exitosa con Google Drive a las ${nowFormatted}`);
+        setDriveNotification({
+          type: 'success',
+          message: `✅ Sincronización exitosa con Google Drive a las ${nowFormatted}`,
+        });
       }
     } catch (err: any) {
       console.warn('Sincronización con Google Drive:', err?.message || err);
@@ -784,11 +844,17 @@ export default function App() {
       if (isAuthError) {
         setTokenNeedsRefresh(true);
         if (isManual) {
-          alert('Tu sesión de Google expiró. Se abrirá la ventana para renovarla.');
+          setDriveNotification({
+            type: 'error',
+            message: 'Tu sesión de Google expiró. Conectando para renovarla...',
+          });
           await handleGoogleLogin();
         }
       } else if (isManual) {
-        alert(`Ocurrió un problema al sincronizar con Google Drive: ${err?.message || 'Error de conexión'}`);
+        setDriveNotification({
+          type: 'error',
+          message: `Ocurrió un problema al sincronizar con Google Drive: ${err?.message || 'Error de conexión'}`,
+        });
       }
     } finally {
       isSyncingRef.current = false;
@@ -959,6 +1025,10 @@ export default function App() {
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
+      return;
+    }
+
+    if (Date.now() < suppressAutoSyncUntilRef.current) {
       return;
     }
 
@@ -1519,15 +1589,41 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
           <GoogleDriveSyncHeader
             user={googleUser}
             isSyncing={isDriveSyncing}
+            isImporting={isDriveImporting}
             lastSyncedAt={lastDriveSyncedAt}
             spreadsheetUrl={spreadsheetUrl}
             tokenNeedsRefresh={tokenNeedsRefresh}
+            isConnecting={isDriveConnecting}
+            errorMessage={driveSyncError}
             onLogin={handleGoogleLogin}
             onLogout={handleGoogleLogout}
             onManualSync={() => triggerDriveSync(null, undefined, true)}
-            onImportDrive={() => handleImportFromDrive()}
+            onImportDrive={handleImportFromDrive}
             onReconnect={handleGoogleLogin}
           />
+
+          {driveNotification && (
+            <div
+              className={`mt-2.5 p-3 rounded-md border flex items-center justify-between text-xs transition-all shadow-xs ${
+                driveNotification.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800'
+                  : driveNotification.type === 'error'
+                  ? 'bg-rose-50 text-rose-900 border-rose-300 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800'
+                  : 'bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span>{driveNotification.message}</span>
+              </div>
+              <button
+                onClick={() => setDriveNotification(null)}
+                className="p-1 hover:opacity-75 transition-opacity cursor-pointer ml-3 text-current"
+                title="Cerrar notificación"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* PAGE 1: INICIO (PANTALLA INICIAL) */}
@@ -1941,6 +2037,15 @@ Diferencia de manera estricta entre gastos puntuales y gastos fijos. No categori
           config={config}
           onSaveConfig={(newConfig) => setConfig(newConfig)}
           onResetSampleData={handleResetSampleData}
+        />
+
+        {/* Confirm Import from Google Drive Modal */}
+        <ConfirmImportModal
+          isOpen={isConfirmImportOpen}
+          onClose={() => setIsConfirmImportOpen(false)}
+          onConfirm={() => executeImportFromDrive()}
+          isImporting={isDriveImporting}
+          spreadsheetUrl={spreadsheetUrl}
         />
       </div>
     </div>

@@ -5,9 +5,12 @@ import { CloudCheck, ExternalLink, RefreshCw, LogOut, FileSpreadsheet, Download 
 interface GoogleDriveSyncHeaderProps {
   user: User | null;
   isSyncing: boolean;
+  isImporting?: boolean;
   lastSyncedAt: string | null;
   spreadsheetUrl: string | null;
   tokenNeedsRefresh?: boolean;
+  isConnecting?: boolean;
+  errorMessage?: string | null;
   onLogin: () => void;
   onLogout: () => void;
   onManualSync: () => void;
@@ -18,9 +21,12 @@ interface GoogleDriveSyncHeaderProps {
 export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
   user,
   isSyncing,
+  isImporting = false,
   lastSyncedAt,
   spreadsheetUrl,
   tokenNeedsRefresh = false,
+  isConnecting = false,
+  errorMessage = null,
   onLogin,
   onLogout,
   onManualSync,
@@ -29,33 +35,52 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
 }) => {
   if (!user) {
     return (
-      <div className="bg-slate-900 dark:bg-slate-900 text-white p-3 sm:p-3.5 rounded-md border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 mb-4 shadow-2xs">
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
-          <div className="w-8 h-8 bg-indigo-600/20 rounded-md flex items-center justify-center shrink-0 border border-indigo-500/30">
-            <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+      <div className="bg-slate-900 dark:bg-slate-900 text-white p-3 sm:p-3.5 rounded-md border border-slate-800 mb-4 shadow-2xs">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <div className="w-8 h-8 bg-indigo-600/20 rounded-md flex items-center justify-center shrink-0 border border-indigo-500/30">
+              <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider truncate">
+                Respaldo en Google Drive
+              </h4>
+              <p className="text-[11px] text-slate-400 truncate">
+                Conecta tu cuenta para sincronizar automáticamente tu planilla en la nube.
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider truncate">
-              Respaldo en Google Drive
-            </h4>
-            <p className="text-[11px] text-slate-400 truncate">
-              Conecta tu cuenta para sincronizar automáticamente tu planilla.
-            </p>
-          </div>
+
+          <button
+            onClick={onLogin}
+            disabled={isConnecting}
+            className="w-full sm:w-auto bg-white hover:bg-slate-100 disabled:bg-slate-200 disabled:opacity-75 text-slate-900 font-bold text-xs px-3.5 py-1.5 rounded-md shadow-2xs flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:cursor-wait shrink-0"
+          >
+            {isConnecting ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-700" />
+                <span>Conectando...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
+                <span>Conectar Google Drive</span>
+              </>
+            )}
+          </button>
         </div>
 
-        <button
-          onClick={onLogin}
-          className="w-full sm:w-auto bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs px-3.5 py-1.5 rounded-md shadow-2xs flex items-center justify-center gap-2 transition-colors cursor-pointer shrink-0"
-        >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 48 48">
-            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-          </svg>
-          <span>Conectar Google Drive</span>
-        </button>
+        {errorMessage && (
+          <div className="mt-2.5 p-2 bg-amber-950/80 border border-amber-700/60 rounded text-[11px] text-amber-200 flex items-start gap-2">
+            <span className="shrink-0 text-amber-400">⚠️</span>
+            <span>{errorMessage}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -130,12 +155,12 @@ export const GoogleDriveSyncHeader: React.FC<GoogleDriveSyncHeaderProps> = ({
         {onImportDrive && (
           <button
             onClick={onImportDrive}
-            disabled={isSyncing}
-            className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs font-bold rounded border border-amber-500/80 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 shadow-2xs"
-            title="⚠️ Reemplaza datos locales con la versión de Google Drive"
+            disabled={isSyncing || isImporting}
+            className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white text-xs font-bold rounded border border-amber-500/80 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-wait shadow-2xs"
+            title="Carga y actualiza los registros desde tu planilla de Google Drive"
           >
-            <Download className="w-3.5 h-3.5 shrink-0" />
-            <span>Cargar</span>
+            <Download className={`w-3.5 h-3.5 shrink-0 ${isImporting ? 'animate-bounce' : ''}`} />
+            <span>{isImporting ? 'Cargando...' : 'Cargar'}</span>
           </button>
         )}
 

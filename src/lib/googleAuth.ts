@@ -69,6 +69,12 @@ export const getStoredAuthData = (): StoredAuthData => {
     return { token: null, expiresAt: null, isValid: false, user: null };
   }
   const token = localStorage.getItem('asistente_financiero_google_token');
+  if (token === 'backend-session') {
+    // Clear stale server session token
+    localStorage.removeItem('asistente_financiero_google_token');
+    localStorage.removeItem('asistente_financiero_token_expires_at');
+    return { token: null, expiresAt: null, isValid: false, user: null };
+  }
   const expiresAtStr = localStorage.getItem('asistente_financiero_token_expires_at');
   const userJson = localStorage.getItem('asistente_financiero_google_user');
 
@@ -134,26 +140,85 @@ export const requestGisTokenSilently = async (_userEmail?: string): Promise<stri
 };
 
 /**
+ * Fallback to Google Identity Services (GIS) Token Client for direct client-side token acquisition.
+ */
+export const requestGisTokenInteractive = (hintEmail?: string): Promise<{ user: any; accessToken: string } | null> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.google?.accounts?.oauth2) {
+      return resolve(null);
+    }
+
+    const clientId =
+      (metaEnv.VITE_GOOGLE_CLIENT_ID) ||
+      (typeof process !== 'undefined' && process.env?.GOOGLE_CLIENT_ID) ||
+      rawFirebaseConfig.oAuthClientId;
+
+    if (!clientId) {
+      return resolve(null);
+    }
+
+    try {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SCOPES.join(' '),
+        hint: hintEmail,
+        callback: async (response: any) => {
+          if (response.error) {
+            if (response.error === 'popup_closed_by_user' || response.error === 'access_denied') {
+              return resolve(null);
+            }
+            return reject(new Error(response.error_description || response.error));
+          }
+          if (response.access_token) {
+            const accessToken = response.access_token;
+            let user = {
+              email: hintEmail || null,
+              displayName: 'Usuario Google',
+              photoURL: null,
+              uid: 'google-user-' + Date.now(),
+            };
+            try {
+              const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              if (userRes.ok) {
+                const u = await userRes.json();
+                user = {
+                  email: u.email || user.email,
+                  displayName: u.name || user.displayName,
+                  photoURL: u.picture || null,
+                  uid: u.id || user.uid,
+                };
+              }
+            } catch {}
+
+            saveAuthTokenAndUser(accessToken, user, response.expires_in || 3550);
+            resolve({ user, accessToken });
+          } else {
+            resolve(null);
+          }
+        },
+      });
+
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch {
+      resolve(null);
+    }
+  });
+};
+
+/**
  * Refreshes the Google OAuth token interactively with a 1-click popup pre-selecting the user's account.
  * MUST only be invoked from an explicit user click handler.
  */
 export const refreshGoogleTokenInteractive = async (userEmail?: string): Promise<string | null> => {
   try {
-    const stored = getStoredAuthData();
-    const email = userEmail || stored.user?.email || undefined;
-    if (email) {
-      provider.setCustomParameters({ login_hint: email });
-    }
-    const res = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(res);
-    if (credential?.accessToken) {
-      saveAuthTokenAndUser(credential.accessToken, res.user);
-      return credential.accessToken;
-    }
+    const res = await googleSignIn();
+    return res?.accessToken || null;
   } catch (err: any) {
     console.warn('Interactive token renewal cancelled or error:', err);
+    return null;
   }
-  return null;
 };
 
 /**
@@ -217,12 +282,8 @@ export const initAuth = (
   if (typeof window !== 'undefined') {
     // Check URL parameters for OAuth redirects
     const params = new URLSearchParams(window.location.search);
-    if (params.get('auth') === 'success') {
+    if (params.get('auth') || params.get('auth_error')) {
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (params.get('auth_error')) {
-      const err = params.get('auth_error');
-      window.history.replaceState({}, document.title, window.location.pathname);
-      console.warn('OAuth callback error:', err);
     }
 
     setPersistence(auth, browserLocalPersistence).catch(() => {
@@ -237,24 +298,11 @@ export const initAuth = (
       if (onAuthSuccess) {
         onAuthSuccess(stored.user as any, stored.token);
       }
-    } else if (stored.user && stored.token !== 'backend-session') {
+    } else if (stored.user && stored.token && stored.isValid) {
       if (onAuthSuccess) {
-        onAuthSuccess(stored.user as any, stored.token || '');
+        onAuthSuccess(stored.user as any, stored.token);
       }
     }
-
-    // Verify session with the backend server (Web Server Flow with refresh_token cookie)
-    checkBackendSession().then((session) => {
-      if (session.authenticated && session.user) {
-        saveAuthTokenAndUser('backend-session', session.user, 30 * 24 * 3600);
-        if (onAuthSuccess) {
-          onAuthSuccess(session.user, 'backend-session');
-        }
-      } else if (stored.token === 'backend-session') {
-        clearStoredAuth();
-        if (onAuthFailure) onAuthFailure();
-      }
-    });
   }
 
   // Catch redirect authentication results on load (for mobile fallback)
@@ -279,35 +327,15 @@ export const initAuth = (
       saveAuthTokenAndUser(activeToken || null, user);
       if (onAuthSuccess) onAuthSuccess(user, activeToken);
     } else {
-      // Check backend session before clearing
-      const session = await checkBackendSession();
-      if (session.authenticated && session.user) {
-        saveAuthTokenAndUser('backend-session', session.user, 30 * 24 * 3600);
-        if (onAuthSuccess) onAuthSuccess(session.user, 'backend-session');
-      } else {
-        if (stored.token === 'backend-session' || !stored.isValid) {
-          clearStoredAuth();
-          if (onAuthFailure) onAuthFailure();
-        }
+      if (!stored.isValid) {
+        clearStoredAuth();
+        if (onAuthFailure) onAuthFailure();
       }
     }
   });
 };
 
 export const googleSignIn = async (): Promise<{ user: User | any; accessToken: string } | null> => {
-  // Check if Web Server OAuth is available in backend
-  try {
-    const sessionInfo = await checkBackendSession();
-    if (sessionInfo.hasOAuthEnv) {
-      // Redirect to Google Web Server Flow endpoint
-      window.location.href = '/api/auth/login';
-      return null;
-    }
-  } catch (err) {
-    console.warn('No se pudo verificar entorno backend para OAuth:', err);
-  }
-
-  // Fallback: If GOOGLE_CLIENT_ID is not configured in backend yet, inform the user or use popup
   try {
     await setPersistence(auth, browserLocalPersistence);
   } catch {
@@ -315,9 +343,13 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
   }
 
   const stored = getStoredAuthData();
+  const customParams: Record<string, string> = {
+    prompt: 'select_account',
+  };
   if (stored.user?.email) {
-    provider.setCustomParameters({ login_hint: stored.user.email });
+    customParams.login_hint = stored.user.email;
   }
+  provider.setCustomParameters(customParams);
 
   const runPopup = async () => {
     const result = await signInWithPopup(auth, provider);
@@ -334,6 +366,15 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
     return data;
   } catch (error: any) {
     const errorMsg = String(error?.message || error?.code || error || '');
+    const isUserCancelled =
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request' ||
+      errorMsg.includes('popup-closed-by-user');
+
+    if (isUserCancelled) {
+      return null;
+    }
+
     const isDbClosing =
       errorMsg.includes('Database is closing') ||
       errorMsg.includes('Database is hidden') ||
@@ -348,14 +389,26 @@ export const googleSignIn = async (): Promise<{ user: User | any; accessToken: s
         saveAuthTokenAndUser(retryData.accessToken, retryData.user);
         return retryData;
       } catch (retryError: any) {
+        if (retryError?.code === 'auth/popup-closed-by-user') return null;
         console.warn('Reintento con inMemoryPersistence falló:', retryError);
-        error = retryError;
       }
     }
 
-    // If popup fails or is blocked on Vercel, navigate to server login
-    window.location.href = '/api/auth/login';
-    return null;
+    // Try Google Identity Services (GIS) TokenClient as a powerful fallback
+    try {
+      const gisData = await requestGisTokenInteractive(stored.user?.email || undefined);
+      if (gisData) {
+        return gisData;
+      }
+    } catch (gisErr: any) {
+      console.warn('Fallback GIS no disponible o falló:', gisErr);
+    }
+
+    if (error?.code === 'auth/popup-blocked') {
+      throw new Error('El navegador bloqueó la ventana emergente de Google. Por favor permite los popups para este sitio o abre la app en una pestaña nueva.');
+    }
+
+    throw error;
   }
 };
 

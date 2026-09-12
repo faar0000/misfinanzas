@@ -20,14 +20,35 @@ export async function getOrCreateFinancialSpreadsheet(
   accessToken: string,
   title: string = 'Control Financiero Personal'
 ): Promise<{ id: string; url: string; isNew: boolean }> {
-  // If we are using backend session and not a raw client accessToken
-  if (!accessToken || !accessToken.startsWith('ya29.')) {
-    const cachedId = localStorage.getItem('asistente_financiero_sheet_id');
-    const cachedUrl = localStorage.getItem('asistente_financiero_sheet_url');
-    if (cachedId && cachedUrl) {
-      return { id: cachedId, url: cachedUrl, isNew: false };
-    }
+  const cachedId = typeof window !== 'undefined' ? localStorage.getItem('asistente_financiero_sheet_id') : null;
+  const cachedUrl = typeof window !== 'undefined' ? localStorage.getItem('asistente_financiero_sheet_url') : null;
 
+  // 1. If we already have a saved spreadsheet ID, verify if it is accessible first
+  if (cachedId) {
+    if (accessToken && accessToken.startsWith('ya29.')) {
+      try {
+        const verifyRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${cachedId}?fields=spreadsheetId,spreadsheetUrl`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          const validId = verifyData.spreadsheetId || cachedId;
+          const validUrl = verifyData.spreadsheetUrl || cachedUrl || `https://docs.google.com/spreadsheets/d/${validId}`;
+          return { id: validId, url: validUrl, isNew: false };
+        } else if (verifyRes.status === 401) {
+          throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('401 UNAUTHENTICATED')) throw err;
+      }
+    } else {
+      if (cachedUrl) return { id: cachedId, url: cachedUrl, isNew: false };
+    }
+  }
+
+  // 2. If we are using backend session without direct token
+  if (!accessToken || !accessToken.startsWith('ya29.')) {
     try {
       const res = await fetch('/api/finanzas/cargar', { credentials: 'include' });
       if (res.ok) {
@@ -43,13 +64,12 @@ export async function getOrCreateFinancialSpreadsheet(
     } catch {
       // ignore
     }
-
     return { id: cachedId || '', url: cachedUrl || '', isNew: false };
   }
 
-  // 1. Search in Drive using client-side raw token
-  const query = encodeURIComponent(`name = '${title}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,webViewLink)`;
+  // 3. Search in Drive using client-side raw token, ordering by most recent
+  const query = encodeURIComponent(`mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and (name = '${title}' or name contains 'Control Financiero')`);
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=modifiedTime desc&fields=files(id,name,webViewLink)`;
 
   const searchRes = await fetch(searchUrl, {
     headers: {
@@ -75,7 +95,7 @@ export async function getOrCreateFinancialSpreadsheet(
     };
   }
 
-  // 2. Create new Google Sheet if not found
+  // 4. Create new Google Sheet if not found
   const createUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
   const createBody = {
     properties: {
@@ -130,9 +150,24 @@ export async function getOrCreateFinancialSpreadsheet(
  * Ensures a specific sheet/tab exists in the Google Sheet.
  */
 async function ensureBackupSheetExists(accessToken: string, spreadsheetId: string): Promise<void> {
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      const tabs = meta.sheets || [];
+      const exists = tabs.some((s: any) => s.properties?.title === '_DataBackup');
+      if (exists) return;
+    }
+  } catch {
+    // If metadata check fails, attempt creation directly
+  }
+
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -151,6 +186,27 @@ async function ensureBackupSheetExists(accessToken: string, spreadsheetId: strin
         ],
       }),
     });
+    if (!res.ok) {
+      // Retry without hidden: true
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: '_DataBackup',
+                },
+              },
+            },
+          ],
+        }),
+      });
+    }
   } catch {
     // Sheet might already exist
   }
@@ -228,12 +284,13 @@ export async function readDataFromGoogleSheets(
   // 1. Read _DataBackup tab if available for rich config/budgets metadata
   try {
     const backupRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/_DataBackup!A1`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent("'_DataBackup'!A1:A50")}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (backupRes.ok) {
       const backupData = await backupRes.json();
-      const rawJson = backupData.values?.[0]?.[0];
+      const rows = backupData.values || [];
+      const rawJson = rows.map((r: any) => (r && r[0]) || '').join('');
       if (rawJson) {
         backupParsed = JSON.parse(rawJson);
       }
@@ -242,140 +299,225 @@ export async function readDataFromGoogleSheets(
     console.warn('No se pudo leer _DataBackup tab:', err);
   }
 
-  // 2. Read all rows from the primary visible 'Transacciones' sheet (A2 to K1000)
+  // 2. Discover available sheet tabs in the spreadsheet
+  let targetSheetTitle = 'Transacciones';
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (metaRes.ok) {
+      const metaData = await metaRes.json();
+      const titles: string[] = (metaData.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+      if (titles.includes('Transacciones')) {
+        targetSheetTitle = 'Transacciones';
+      } else {
+        const visibleSheet = titles.find((t) => !t.startsWith('_') && !t.includes('Backup'));
+        if (visibleSheet) {
+          targetSheetTitle = visibleSheet;
+        }
+      }
+    }
+  } catch (metaErr) {
+    console.warn('No se pudo verificar lista de hojas:', metaErr);
+  }
+
+  // 3. Read rows from the visible sheet tab (including headers in row 1)
   let sheetTransactions: TransactionRecord[] = [];
   try {
-    const txUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transacciones!A2:Z1000`;
+    const txUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetSheetTitle)}!A1:Z2000`;
     const txRes = await fetch(txUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (txRes.ok) {
       const data = await txRes.json();
-      const rows: string[][] = data.values || [];
+      const rawRows: string[][] = data.values || [];
 
-      sheetTransactions = rows
-        .filter((row) => row && row.length >= 3 && row[0] && row[0].trim() !== '')
-        .map((row) => {
-          const id = row[0].trim();
-          const fecha = normalizeDateToISO(row[1]);
-          const tipo_operacion = (row[2] || '').toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
-          const monto_total = parseCleanAmount(row[3]);
-          const rawMetodo = (row[4] || 'EFECTIVO').toUpperCase().trim();
-          const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
-            rawMetodo.includes('CREDITO') ? 'CREDITO' :
-            rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
+      if (rawRows.length > 0) {
+        // Detect headers from row 0
+        let idCol = 0;
+        let dateCol = 1;
+        let typeCol = 2;
+        let amountCol = 3;
+        let methodCol = 4;
+        let quotaCol = 5;
+        let monthlyQuotaCol = 6;
+        let alertCol = 7;
+        let freeMoneyCol = 8;
+        let detailCol = 9;
+        let userMsgCol = 10;
+        let fixedCol = 11;
+        let freqCol = 12;
 
-          const cuotas = parseInt(row[5] || '1', 10) || 1;
-          const monto_cuota_mensual = parseCleanAmount(row[6]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
-          const alerta_ahorro_comprometido = (row[7] || '').toUpperCase().includes('SÍ') || (row[7] || '').toUpperCase().includes('SI');
-          const dinero_libre_restante = parseCleanAmount(row[8]);
-          const detailStr = row[9] || '';
-          const mensaje_usuario = row[10] || 'Transacción sincronizada desde Google Sheets.';
-          const rawTipoGasto = (row[11] || '').toString().trim().toUpperCase();
-          const rawFrecuencia = (row[12] || '').toString().trim().toUpperCase();
-          let es_gasto_fijo: boolean | undefined = undefined;
-          if (rawTipoGasto.includes('FIJO')) {
-            es_gasto_fijo = true;
-          } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
-            es_gasto_fijo = false;
-          }
-          let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
-          if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
-            frecuencia_recurrencia = rawFrecuencia;
-          }
-
-          // Parse items from detail string
-          let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
-          if (detailStr && detailStr.includes(' | ')) {
-            const splitParts = detailStr.split(' | ');
-            items = splitParts.map((p) => {
-              const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
-              if (match) {
-                return {
-                  concepto: match[1].trim() || 'Ítem',
-                  categoria_principal: match[2].trim() || 'Alimentación y Dieta',
-                  subcategoria: 'General',
-                  monto: parseCleanAmount(match[3]) || (monto_total / splitParts.length),
-                };
-              }
-              return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
-            });
-          } else if (detailStr) {
-            const matchSingle = detailStr.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
-            if (matchSingle) {
-              items = [{
-                concepto: matchSingle[1].trim() || 'Ítem',
-                categoria_principal: matchSingle[2].trim() || 'Alimentación y Dieta',
-                subcategoria: 'General',
-                monto: parseCleanAmount(matchSingle[3]) || monto_total,
-              }];
-            }
-          }
-
-          return {
-            id,
-            fecha,
-            tipo_operacion,
-            monto_total,
-            metodo_pago,
-            cuotas,
-            monto_cuota_mensual,
-            alerta_ahorro_comprometido,
-            dinero_libre_restante,
-            items,
-            mensaje_usuario,
-            ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
-            ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
-          };
+        const firstRow = rawRows[0] || [];
+        const hasHeaderKeywords = firstRow.some((cell) => {
+          const str = String(cell || '').toLowerCase();
+          return str.includes('fecha') || str.includes('monto') || str.includes('tipo') || str.includes('detalle') || str.includes('id');
         });
+
+        let dataRows = rawRows;
+        if (hasHeaderKeywords) {
+          firstRow.forEach((cell, idx) => {
+            const h = String(cell || '').toLowerCase().trim();
+            if (h === 'id') idCol = idx;
+            else if (h.includes('fecha') || h.includes('date')) dateCol = idx;
+            else if (h.includes('tipo operac') || (h.includes('tipo') && !h.includes('gasto'))) typeCol = idx;
+            else if (h.includes('monto total') || h.includes('monto') || h.includes('importe') || h.includes('total')) amountCol = idx;
+            else if (h.includes('m[eé]todo') || h.includes('pago') || h.includes('medio')) methodCol = idx;
+            else if (h === 'cuotas' || h.includes('nro cuota')) quotaCol = idx;
+            else if (h.includes('cuota mensual')) monthlyQuotaCol = idx;
+            else if (h.includes('alerta')) alertCol = idx;
+            else if (h.includes('dinero libre') || h.includes('disponible') || h.includes('restante')) freeMoneyCol = idx;
+            else if (h.includes('detalle') || h.includes('concepto') || h.includes('descrip') || h.includes('item')) detailCol = idx;
+            else if (h.includes('mensaje') || h.includes('asistente') || h.includes('nota')) userMsgCol = idx;
+            else if (h.includes('fijo') || h.includes('tipo gasto')) fixedCol = idx;
+            else if (h.includes('frecuencia') || h.includes('recurrencia')) freqCol = idx;
+          });
+          dataRows = rawRows.slice(1);
+        }
+
+        sheetTransactions = dataRows
+          .filter((row) => row && row.some((cell) => cell && String(cell).trim() !== ''))
+          .map((row, rowIdx) => {
+            const rawId = (row[idCol] || '').toString().trim();
+            // If the row lacks an ID (e.g. human entered row in Google Sheets), generate a stable synthetic ID
+            const id = rawId && rawId.length > 2 ? rawId : `tx-sheet-${Date.now()}-${rowIdx}`;
+            const fecha = normalizeDateToISO(row[dateCol]);
+            const tipo_operacion = (row[typeCol] || '').toString().toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
+            const monto_total = parseCleanAmount(row[amountCol]);
+            const rawMetodo = (row[methodCol] || 'EFECTIVO').toString().toUpperCase().trim();
+            const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
+              rawMetodo.includes('CREDITO') ? 'CREDITO' :
+              rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
+
+            const cuotas = parseInt(row[quotaCol] || '1', 10) || 1;
+            const monto_cuota_mensual = parseCleanAmount(row[monthlyQuotaCol]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
+            const alerta_ahorro_comprometido = (row[alertCol] || '').toString().toUpperCase().includes('SÍ') || (row[alertCol] || '').toString().toUpperCase().includes('SI');
+            const dinero_libre_restante = parseCleanAmount(row[freeMoneyCol]);
+            const detailStr = (row[detailCol] || '').toString().trim();
+            const mensaje_usuario = (row[userMsgCol] || 'Transacción sincronizada desde Google Sheets.').toString().trim();
+            const rawTipoGasto = (row[fixedCol] || '').toString().trim().toUpperCase();
+            const rawFrecuencia = (row[freqCol] || '').toString().trim().toUpperCase();
+            let es_gasto_fijo: boolean | undefined = undefined;
+            if (rawTipoGasto.includes('FIJO')) {
+              es_gasto_fijo = true;
+            } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
+              es_gasto_fijo = false;
+            }
+            let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
+            if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
+              frecuencia_recurrencia = rawFrecuencia;
+            }
+
+            // Parse items from detail string
+            let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
+            if (detailStr && detailStr.includes(' | ')) {
+              const splitParts = detailStr.split(' | ');
+              items = splitParts.map((p) => {
+                const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+                if (match) {
+                  return {
+                    concepto: match[1].trim() || 'Ítem',
+                    categoria_principal: match[2].trim() || 'Alimentación y Dieta',
+                    subcategoria: 'General',
+                    monto: parseCleanAmount(match[3]) || (monto_total / splitParts.length),
+                  };
+                }
+                return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
+              });
+            } else if (detailStr) {
+              const matchSingle = detailStr.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+              if (matchSingle) {
+                items = [{
+                  concepto: matchSingle[1].trim() || 'Ítem',
+                  categoria_principal: matchSingle[2].trim() || 'Alimentación y Dieta',
+                  subcategoria: 'General',
+                  monto: parseCleanAmount(matchSingle[3]) || monto_total,
+                }];
+              }
+            }
+
+            return {
+              id,
+              fecha,
+              tipo_operacion,
+              monto_total,
+              metodo_pago,
+              cuotas,
+              monto_cuota_mensual,
+              alerta_ahorro_comprometido,
+              dinero_libre_restante,
+              items,
+              mensaje_usuario,
+              ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
+              ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
+            };
+          });
+      }
     }
   } catch (sheetErr) {
-    console.error('Error al leer pestaña Transacciones:', sheetErr);
+    console.error('Error al leer pestaña de transacciones:', sheetErr);
   }
 
-  // 3. Merge: if we have backup transactions, enrich or merge missing ones
+  // 4. Merge: Physical rows in Google Sheets represent the active truth
   const backupList: TransactionRecord[] = (backupParsed?.transactions && Array.isArray(backupParsed.transactions))
     ? backupParsed.transactions.map((t: any) => ({ ...t, fecha: normalizeDateToISO(t.fecha) }))
     : [];
 
-  const finalTransactionsMap = new Map<string, TransactionRecord>();
-
-  // Prioritize the full metadata from backup first
+  const backupMap = new Map<string, TransactionRecord>();
   backupList.forEach((tx) => {
-    if (tx && tx.id) {
-      finalTransactionsMap.set(tx.id, tx);
-    }
+    if (tx && tx.id) backupMap.set(tx.id, tx);
   });
 
-  // Then add or update with all rows physically present in the Google Sheet
-  sheetTransactions.forEach((sheetTx) => {
-    if (!sheetTx.id) return;
-    const existing = finalTransactionsMap.get(sheetTx.id);
-    if (existing) {
-      // Retain full items structure if available, but update essential fields from sheet
-      finalTransactionsMap.set(sheetTx.id, {
-        ...existing,
-        fecha: sheetTx.fecha,
-        monto_total: sheetTx.monto_total,
-        tipo_operacion: sheetTx.tipo_operacion,
-        metodo_pago: sheetTx.metodo_pago,
-        cuotas: sheetTx.cuotas,
-        monto_cuota_mensual: sheetTx.monto_cuota_mensual,
-        ...(sheetTx.es_gasto_fijo !== undefined ? { es_gasto_fijo: sheetTx.es_gasto_fijo } : {}),
-        ...(sheetTx.frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia: sheetTx.frecuencia_recurrencia } : {}),
-      });
-    } else {
-      // New row added in Google Sheet!
-      finalTransactionsMap.set(sheetTx.id, sheetTx);
-    }
-  });
+  let finalTransactions: TransactionRecord[] = [];
 
-  const mergedTransactions = Array.from(finalTransactionsMap.values());
+  if (sheetTransactions.length > 0) {
+    // If the sheet has physical rows, these are the current rows in Google Drive!
+    finalTransactions = sheetTransactions.map((sheetTx) => {
+      const existing = backupMap.get(sheetTx.id);
+      if (existing) {
+        // Check if user edited amount or description in the sheet
+        const isMontoChanged = Math.abs(existing.monto_total - sheetTx.monto_total) > 0.01;
+        const sheetConcept = sheetTx.items?.[0]?.concepto;
+        const isDetailChanged = sheetConcept && sheetConcept !== 'Operación' && sheetConcept !== existing.items?.[0]?.concepto;
 
-  if (mergedTransactions.length > 0) {
+        let enrichedItems = existing.items;
+        if (isMontoChanged || isDetailChanged) {
+          if (existing.items && existing.items.length === 1) {
+            enrichedItems = [{
+              ...existing.items[0],
+              monto: sheetTx.monto_total,
+              concepto: isDetailChanged ? sheetConcept : existing.items[0].concepto,
+            }];
+          } else {
+            enrichedItems = sheetTx.items;
+          }
+        }
+
+        return {
+          ...existing,
+          fecha: sheetTx.fecha,
+          monto_total: sheetTx.monto_total,
+          tipo_operacion: sheetTx.tipo_operacion,
+          metodo_pago: sheetTx.metodo_pago,
+          cuotas: sheetTx.cuotas,
+          monto_cuota_mensual: sheetTx.monto_cuota_mensual,
+          items: enrichedItems,
+          ...(sheetTx.es_gasto_fijo !== undefined ? { es_gasto_fijo: sheetTx.es_gasto_fijo } : {}),
+          ...(sheetTx.frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia: sheetTx.frecuencia_recurrencia } : {}),
+        };
+      }
+      return sheetTx;
+    });
+  } else if (backupList.length > 0) {
+    // If visible sheet reading was empty, fallback to backup
+    finalTransactions = backupList;
+  }
+
+  if (finalTransactions.length > 0 || backupParsed?.config || backupParsed?.categoryBudgets) {
     return {
-      transactions: mergedTransactions,
+      transactions: finalTransactions,
       config: backupParsed?.config,
       categoryBudgets: backupParsed?.categoryBudgets,
     };
@@ -564,19 +706,80 @@ export async function syncDataToGoogleSheets(
       updatedAt: new Date().toISOString(),
     });
 
-    const backupUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/_DataBackup!A1?valueInputOption=RAW`;
-    await fetch(backupUpdateUrl, {
+    const CHUNK_SIZE = 30000;
+    const chunks: string[] = [];
+    for (let i = 0; i < backupJson.length; i += CHUNK_SIZE) {
+      chunks.push(backupJson.slice(i, i + CHUNK_SIZE));
+    }
+    if (chunks.length === 0) chunks.push('');
+
+    // Clear previous rows in _DataBackup column A so shorter updates don't retain old data
+    try {
+      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent("'_DataBackup'!A1:A50")}:clear`;
+      await fetch(clearUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      // Clear is optional
+    }
+
+    const backupUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent("'_DataBackup'!A1")}?valueInputOption=RAW`;
+    const updateRes = await fetch(backupUpdateUrl, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        range: '_DataBackup!A1',
+        range: "'_DataBackup'!A1",
         majorDimension: 'ROWS',
-        values: [[backupJson]],
+        values: chunks.map((c) => [c]),
       }),
     });
+
+    if (!updateRes.ok) {
+      // If failed, force add sheet and retry once
+      try {
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: '_DataBackup',
+                  },
+                },
+              },
+            ],
+          }),
+        });
+
+        await fetch(backupUpdateUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            range: "'_DataBackup'!A1",
+            majorDimension: 'ROWS',
+            values: chunks.map((c) => [c]),
+          }),
+        });
+      } catch {
+        // Tab might already exist
+      }
+    }
   } catch (backupErr) {
     console.warn('Sincronización de respaldo _DataBackup:', backupErr);
   }

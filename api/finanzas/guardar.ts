@@ -131,14 +131,67 @@ export async function handleGuardar(req: any, res: any) {
         updatedAt: new Date().toISOString(),
       });
 
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: targetId,
-        range: '_DataBackup!A1',
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: [[backupJson]],
-        },
-      });
+      // Split into chunks of 30,000 chars to avoid Google Sheets 50,000-character cell limit (HTTP 400)
+      const CHUNK_SIZE = 30000;
+      const chunks: string[] = [];
+      for (let i = 0; i < backupJson.length; i += CHUNK_SIZE) {
+        chunks.push(backupJson.slice(i, i + CHUNK_SIZE));
+      }
+      if (chunks.length === 0) chunks.push('');
+
+      // Clear previous rows in _DataBackup column A so shorter updates don't retain old data
+      try {
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: targetId,
+          range: "'_DataBackup'!A1:A50",
+        });
+      } catch {
+        // Clear is optional
+      }
+
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: targetId,
+          range: "'_DataBackup'!A1",
+          valueInputOption: 'RAW',
+          requestBody: {
+            range: "'_DataBackup'!A1",
+            majorDimension: 'ROWS',
+            values: chunks.map((c) => [c]),
+          },
+        });
+      } catch (firstErr) {
+        // If range parsing failed because tab wasn't ready, attempt to force create sheet and retry once
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: targetId,
+            requestBody: {
+              requests: [
+                {
+                  addSheet: {
+                    properties: {
+                      title: '_DataBackup',
+                    },
+                  },
+                },
+              ],
+            },
+          });
+        } catch {
+          // Tab might already exist
+        }
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: targetId,
+          range: "'_DataBackup'!A1",
+          valueInputOption: 'RAW',
+          requestBody: {
+            range: "'_DataBackup'!A1",
+            majorDimension: 'ROWS',
+            values: chunks.map((c) => [c]),
+          },
+        });
+      }
     } catch (backupErr) {
       console.warn('Error guardando en _DataBackup:', backupErr);
     }

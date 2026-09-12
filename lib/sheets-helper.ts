@@ -161,10 +161,12 @@ export function getAuthenticatedClients(req: any, res: any) {
         });
         return { data };
       },
-      get: async (params: { spreadsheetId: string }) => {
-        const data = await authenticatedFetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}`
-        );
+      get: async (params: { spreadsheetId: string; fields?: string }) => {
+        const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}`);
+        if (params.fields) {
+          url.searchParams.set('fields', params.fields);
+        }
+        const data = await authenticatedFetch(url.toString());
         return { data };
       },
       batchUpdate: async (params: { spreadsheetId: string; requestBody: any }) => {
@@ -261,10 +263,15 @@ export async function findOrCreateSpreadsheet(drive: any, sheets: any, title: st
 
 export async function ensureBackupTabExists(sheets: any, spreadsheetId: string) {
   try {
-    const meta = await sheets.spreadsheets.get({ spreadsheetId });
-    const tabs = meta.data.sheets || [];
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties.title',
+    });
+    const tabs = meta.data?.sheets || [];
     const exists = tabs.some((s: any) => s.properties?.title === '_DataBackup');
-    if (!exists) {
+    if (exists) return;
+
+    try {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
         requestBody: {
@@ -280,9 +287,47 @@ export async function ensureBackupTabExists(sheets: any, spreadsheetId: string) 
           ],
         },
       });
+    } catch {
+      // If adding with hidden: true failed, retry adding visible sheet
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: '_DataBackup',
+                  },
+                },
+              },
+            ],
+          },
+        });
+      } catch {
+        // Tab might already exist
+      }
     }
   } catch (err) {
-    // Tab might already exist
+    // If metadata check failed, attempt blind creation
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: '_DataBackup',
+                },
+              },
+            },
+          ],
+        },
+      });
+    } catch {
+      // Tab might already exist
+    }
   }
 }
 
