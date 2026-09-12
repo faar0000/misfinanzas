@@ -259,10 +259,11 @@ export async function readDataFromGoogleSheets(
     if (backendRes.ok) {
       const json = await backendRes.json();
       if (json.success && json.data) {
-        return json.data;
+        if (json.data.transactions?.length > 0 || json.data.config || json.data.categoryBudgets) {
+          return json.data;
+        }
       }
     } else if (backendRes.status === 401) {
-      // If we don't have a direct raw Google access token, raise auth error
       if (!accessToken || !accessToken.startsWith('ya29.')) {
         throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
       }
@@ -276,7 +277,7 @@ export async function readDataFromGoogleSheets(
 
   // 2. Client-side fallback if a valid raw accessToken is available
   if (!accessToken || !accessToken.startsWith('ya29.')) {
-    return null;
+    throw new Error('401 UNAUTHENTICATED: La sesión de Google no está activa. Por favor haz clic en "Reconectar Google".');
   }
 
   let backupParsed: any = null;
@@ -287,6 +288,9 @@ export async function readDataFromGoogleSheets(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent("'_DataBackup'!A1:A50")}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
+    if (backupRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
     if (backupRes.ok) {
       const backupData = await backupRes.json();
       const rows = backupData.values || [];
@@ -295,169 +299,210 @@ export async function readDataFromGoogleSheets(
         backupParsed = JSON.parse(rawJson);
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message?.includes('401 UNAUTHENTICATED')) throw err;
     console.warn('No se pudo leer _DataBackup tab:', err);
   }
 
   // 2. Discover available sheet tabs in the spreadsheet
-  let targetSheetTitle = 'Transacciones';
+  let sheetTitles: string[] = [];
   try {
     const metaRes = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
+    if (metaRes.status === 401) {
+      throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+    }
     if (metaRes.ok) {
       const metaData = await metaRes.json();
-      const titles: string[] = (metaData.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
-      if (titles.includes('Transacciones')) {
-        targetSheetTitle = 'Transacciones';
-      } else {
-        const visibleSheet = titles.find((t) => !t.startsWith('_') && !t.includes('Backup'));
-        if (visibleSheet) {
-          targetSheetTitle = visibleSheet;
-        }
-      }
+      sheetTitles = (metaData.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
     }
-  } catch (metaErr) {
+  } catch (metaErr: any) {
+    if (metaErr?.message?.includes('401 UNAUTHENTICATED')) throw metaErr;
     console.warn('No se pudo verificar lista de hojas:', metaErr);
   }
 
-  // 3. Read rows from the visible sheet tab (including headers in row 1)
-  let sheetTransactions: TransactionRecord[] = [];
-  try {
-    const txUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(targetSheetTitle)}!A1:Z2000`;
-    const txRes = await fetch(txUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+  // Build candidate sheets list
+  const candidateSheets: string[] = [];
+  const txSheet = sheetTitles.find((t) => t.toLowerCase() === 'transacciones' || t.toLowerCase().includes('transac'));
+  if (txSheet) candidateSheets.push(txSheet);
 
-    if (txRes.ok) {
-      const data = await txRes.json();
-      const rawRows: string[][] = data.values || [];
-
-      if (rawRows.length > 0) {
-        // Detect headers from row 0
-        let idCol = 0;
-        let dateCol = 1;
-        let typeCol = 2;
-        let amountCol = 3;
-        let methodCol = 4;
-        let quotaCol = 5;
-        let monthlyQuotaCol = 6;
-        let alertCol = 7;
-        let freeMoneyCol = 8;
-        let detailCol = 9;
-        let userMsgCol = 10;
-        let fixedCol = 11;
-        let freqCol = 12;
-
-        const firstRow = rawRows[0] || [];
-        const hasHeaderKeywords = firstRow.some((cell) => {
-          const str = String(cell || '').toLowerCase();
-          return str.includes('fecha') || str.includes('monto') || str.includes('tipo') || str.includes('detalle') || str.includes('id');
-        });
-
-        let dataRows = rawRows;
-        if (hasHeaderKeywords) {
-          firstRow.forEach((cell, idx) => {
-            const h = String(cell || '').toLowerCase().trim();
-            if (h === 'id') idCol = idx;
-            else if (h.includes('fecha') || h.includes('date')) dateCol = idx;
-            else if (h.includes('tipo operac') || (h.includes('tipo') && !h.includes('gasto'))) typeCol = idx;
-            else if (h.includes('monto total') || h.includes('monto') || h.includes('importe') || h.includes('total')) amountCol = idx;
-            else if (h.includes('m[eé]todo') || h.includes('pago') || h.includes('medio')) methodCol = idx;
-            else if (h === 'cuotas' || h.includes('nro cuota')) quotaCol = idx;
-            else if (h.includes('cuota mensual')) monthlyQuotaCol = idx;
-            else if (h.includes('alerta')) alertCol = idx;
-            else if (h.includes('dinero libre') || h.includes('disponible') || h.includes('restante')) freeMoneyCol = idx;
-            else if (h.includes('detalle') || h.includes('concepto') || h.includes('descrip') || h.includes('item')) detailCol = idx;
-            else if (h.includes('mensaje') || h.includes('asistente') || h.includes('nota')) userMsgCol = idx;
-            else if (h.includes('fijo') || h.includes('tipo gasto')) fixedCol = idx;
-            else if (h.includes('frecuencia') || h.includes('recurrencia')) freqCol = idx;
-          });
-          dataRows = rawRows.slice(1);
-        }
-
-        sheetTransactions = dataRows
-          .filter((row) => row && row.some((cell) => cell && String(cell).trim() !== ''))
-          .map((row, rowIdx) => {
-            const rawId = (row[idCol] || '').toString().trim();
-            // If the row lacks an ID (e.g. human entered row in Google Sheets), generate a stable synthetic ID
-            const id = rawId && rawId.length > 2 ? rawId : `tx-sheet-${Date.now()}-${rowIdx}`;
-            const fecha = normalizeDateToISO(row[dateCol]);
-            const tipo_operacion = (row[typeCol] || '').toString().toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
-            const monto_total = parseCleanAmount(row[amountCol]);
-            const rawMetodo = (row[methodCol] || 'EFECTIVO').toString().toUpperCase().trim();
-            const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
-              rawMetodo.includes('CREDITO') ? 'CREDITO' :
-              rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
-
-            const cuotas = parseInt(row[quotaCol] || '1', 10) || 1;
-            const monto_cuota_mensual = parseCleanAmount(row[monthlyQuotaCol]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
-            const alerta_ahorro_comprometido = (row[alertCol] || '').toString().toUpperCase().includes('SÍ') || (row[alertCol] || '').toString().toUpperCase().includes('SI');
-            const dinero_libre_restante = parseCleanAmount(row[freeMoneyCol]);
-            const detailStr = (row[detailCol] || '').toString().trim();
-            const mensaje_usuario = (row[userMsgCol] || 'Transacción sincronizada desde Google Sheets.').toString().trim();
-            const rawTipoGasto = (row[fixedCol] || '').toString().trim().toUpperCase();
-            const rawFrecuencia = (row[freqCol] || '').toString().trim().toUpperCase();
-            let es_gasto_fijo: boolean | undefined = undefined;
-            if (rawTipoGasto.includes('FIJO')) {
-              es_gasto_fijo = true;
-            } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
-              es_gasto_fijo = false;
-            }
-            let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
-            if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
-              frecuencia_recurrencia = rawFrecuencia;
-            }
-
-            // Parse items from detail string
-            let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
-            if (detailStr && detailStr.includes(' | ')) {
-              const splitParts = detailStr.split(' | ');
-              items = splitParts.map((p) => {
-                const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
-                if (match) {
-                  return {
-                    concepto: match[1].trim() || 'Ítem',
-                    categoria_principal: match[2].trim() || 'Alimentación y Dieta',
-                    subcategoria: 'General',
-                    monto: parseCleanAmount(match[3]) || (monto_total / splitParts.length),
-                  };
-                }
-                return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
-              });
-            } else if (detailStr) {
-              const matchSingle = detailStr.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
-              if (matchSingle) {
-                items = [{
-                  concepto: matchSingle[1].trim() || 'Ítem',
-                  categoria_principal: matchSingle[2].trim() || 'Alimentación y Dieta',
-                  subcategoria: 'General',
-                  monto: parseCleanAmount(matchSingle[3]) || monto_total,
-                }];
-              }
-            }
-
-            return {
-              id,
-              fecha,
-              tipo_operacion,
-              monto_total,
-              metodo_pago,
-              cuotas,
-              monto_cuota_mensual,
-              alerta_ahorro_comprometido,
-              dinero_libre_restante,
-              items,
-              mensaje_usuario,
-              ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
-              ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
-            };
-          });
-      }
+  sheetTitles.forEach((t) => {
+    const lower = t.toLowerCase();
+    if (!candidateSheets.includes(t) && (lower.includes('movimiento') || lower.includes('gasto') || lower.includes('registro') || lower.includes('operac'))) {
+      candidateSheets.push(t);
     }
-  } catch (sheetErr) {
-    console.error('Error al leer pestaña de transacciones:', sheetErr);
+  });
+
+  sheetTitles.forEach((t) => {
+    const lower = t.toLowerCase();
+    if (!candidateSheets.includes(t) && (lower.startsWith('hoja') || lower.startsWith('sheet'))) {
+      candidateSheets.push(t);
+    }
+  });
+
+  sheetTitles.forEach((t) => {
+    const lower = t.toLowerCase();
+    if (!candidateSheets.includes(t) && !lower.startsWith('_') && !lower.includes('backup') && !lower.includes('resumen') && !lower.includes('dashboard')) {
+      candidateSheets.push(t);
+    }
+  });
+
+  if (candidateSheets.length === 0 && sheetTitles.length > 0) {
+    candidateSheets.push(sheetTitles[0]);
+  } else if (candidateSheets.length === 0) {
+    candidateSheets.push('Transacciones');
+  }
+
+  // 3. Read rows from candidate sheets
+  let sheetTransactions: TransactionRecord[] = [];
+  for (const sheetName of candidateSheets) {
+    try {
+      const safeRange = `'${sheetName.replace(/'/g, "''")}'!A1:Z2000`;
+      const txUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(safeRange)}`;
+      const txRes = await fetch(txUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (txRes.status === 401) {
+        throw new Error('401 UNAUTHENTICATED: La sesión de Google ha expirado. Por favor reconecta tu cuenta.');
+      }
+
+      if (txRes.ok) {
+        const data = await txRes.json();
+        const rawRows: string[][] = data.values || [];
+
+        if (rawRows.length > 0) {
+          // Detect headers from row 0
+          let idCol = 0;
+          let dateCol = 1;
+          let typeCol = 2;
+          let amountCol = 3;
+          let methodCol = 4;
+          let quotaCol = 5;
+          let monthlyQuotaCol = 6;
+          let alertCol = 7;
+          let freeMoneyCol = 8;
+          let detailCol = 9;
+          let userMsgCol = 10;
+          let fixedCol = 11;
+          let freqCol = 12;
+
+          const firstRow = rawRows[0] || [];
+          const hasHeaderKeywords = firstRow.some((cell) => {
+            const str = String(cell || '').toLowerCase();
+            return str.includes('fecha') || str.includes('monto') || str.includes('tipo') || str.includes('detalle') || str.includes('id') || str.includes('concepto');
+          });
+
+          let dataRows = rawRows;
+          if (hasHeaderKeywords) {
+            firstRow.forEach((cell, idx) => {
+              const h = String(cell || '').toLowerCase().trim();
+              if (h === 'id') idCol = idx;
+              else if (h.includes('fecha') || h.includes('date')) dateCol = idx;
+              else if (h.includes('tipo operac') || (h.includes('tipo') && !h.includes('gasto'))) typeCol = idx;
+              else if (h.includes('monto total') || h.includes('monto') || h.includes('importe') || h.includes('total')) amountCol = idx;
+              else if (h.includes('m[eé]todo') || h.includes('pago') || h.includes('medio')) methodCol = idx;
+              else if (h === 'cuotas' || h.includes('nro cuota')) quotaCol = idx;
+              else if (h.includes('cuota mensual')) monthlyQuotaCol = idx;
+              else if (h.includes('alerta')) alertCol = idx;
+              else if (h.includes('dinero libre') || h.includes('disponible') || h.includes('restante')) freeMoneyCol = idx;
+              else if (h.includes('detalle') || h.includes('concepto') || h.includes('descrip') || h.includes('item')) detailCol = idx;
+              else if (h.includes('mensaje') || h.includes('asistente') || h.includes('nota')) userMsgCol = idx;
+              else if (h.includes('fijo') || h.includes('tipo gasto')) fixedCol = idx;
+              else if (h.includes('frecuencia') || h.includes('recurrencia')) freqCol = idx;
+            });
+            dataRows = rawRows.slice(1);
+          }
+
+          const parsedRows: TransactionRecord[] = dataRows
+            .filter((row) => row && row.some((cell) => cell && String(cell).trim() !== ''))
+            .map((row, rowIdx) => {
+              const rawId = (row[idCol] || '').toString().trim();
+              const id = rawId && rawId.length > 2 ? rawId : `tx-sheet-${Date.now()}-${rowIdx}`;
+              const fecha = normalizeDateToISO(row[dateCol]);
+              const tipo_operacion = (row[typeCol] || '').toString().toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
+              const monto_total = parseCleanAmount(row[amountCol]);
+              const rawMetodo = (row[methodCol] || 'EFECTIVO').toString().toUpperCase().trim();
+              const metodo_pago: 'EFECTIVO' | 'DEBITO' | 'CREDITO' =
+                rawMetodo.includes('CREDITO') ? 'CREDITO' :
+                rawMetodo.includes('DEBITO') ? 'DEBITO' : 'EFECTIVO';
+
+              const cuotas = parseInt(row[quotaCol] || '1', 10) || 1;
+              const monto_cuota_mensual = parseCleanAmount(row[monthlyQuotaCol]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
+              const alerta_ahorro_comprometido = (row[alertCol] || '').toString().toUpperCase().includes('SÍ') || (row[alertCol] || '').toString().toUpperCase().includes('SI');
+              const dinero_libre_restante = parseCleanAmount(row[freeMoneyCol]);
+              const detailStr = (row[detailCol] || '').toString().trim();
+              const mensaje_usuario = (row[userMsgCol] || 'Transacción sincronizada desde Google Sheets.').toString().trim();
+              const rawTipoGasto = (row[fixedCol] || '').toString().trim().toUpperCase();
+              const rawFrecuencia = (row[freqCol] || '').toString().trim().toUpperCase();
+              let es_gasto_fijo: boolean | undefined = undefined;
+              if (rawTipoGasto.includes('FIJO')) {
+                es_gasto_fijo = true;
+              } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
+                es_gasto_fijo = false;
+              }
+              let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
+              if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
+                frecuencia_recurrencia = rawFrecuencia;
+              }
+
+              // Parse items from detail string
+              let items: any[] = [{ concepto: detailStr || 'Operación', monto: monto_total, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' }];
+              if (detailStr && detailStr.includes(' | ')) {
+                const splitParts = detailStr.split(' | ');
+                items = splitParts.map((p) => {
+                  const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+                  if (match) {
+                    return {
+                      concepto: match[1].trim() || 'Ítem',
+                      categoria_principal: match[2].trim() || 'Alimentación y Dieta',
+                      subcategoria: 'General',
+                      monto: parseCleanAmount(match[3]) || (monto_total / splitParts.length),
+                    };
+                  }
+                  return { concepto: p.trim(), monto: monto_total / splitParts.length, categoria_principal: 'Alimentación y Dieta', subcategoria: 'General' };
+                });
+              } else if (detailStr) {
+                const matchSingle = detailStr.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+                if (matchSingle) {
+                  items = [{
+                    concepto: matchSingle[1].trim() || 'Ítem',
+                    categoria_principal: matchSingle[2].trim() || 'Alimentación y Dieta',
+                    subcategoria: 'General',
+                    monto: parseCleanAmount(matchSingle[3]) || monto_total,
+                  }];
+                }
+              }
+
+              return {
+                id,
+                fecha,
+                tipo_operacion,
+                monto_total,
+                metodo_pago,
+                cuotas,
+                monto_cuota_mensual,
+                alerta_ahorro_comprometido,
+                dinero_libre_restante,
+                items,
+                mensaje_usuario,
+                ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
+                ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
+              };
+            });
+
+          if (parsedRows.length > 0) {
+            sheetTransactions = parsedRows;
+            break;
+          }
+        }
+      }
+    } catch (sheetErr: any) {
+      if (sheetErr?.message?.includes('401 UNAUTHENTICATED')) throw sheetErr;
+      console.warn(`Error al leer pestaña '${sheetName}':`, sheetErr);
+    }
   }
 
   // 4. Merge: Physical rows in Google Sheets represent the active truth
@@ -515,15 +560,11 @@ export async function readDataFromGoogleSheets(
     finalTransactions = backupList;
   }
 
-  if (finalTransactions.length > 0 || backupParsed?.config || backupParsed?.categoryBudgets) {
-    return {
-      transactions: finalTransactions,
-      config: backupParsed?.config,
-      categoryBudgets: backupParsed?.categoryBudgets,
-    };
-  }
-
-  return null;
+  return {
+    transactions: finalTransactions,
+    config: backupParsed?.config,
+    categoryBudgets: backupParsed?.categoryBudgets,
+  };
 }
 
 /**

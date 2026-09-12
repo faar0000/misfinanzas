@@ -236,13 +236,14 @@ export const getValidGoogleAccessToken = async (_forceRefresh: boolean = false):
   }
 
   const stored = getStoredAuthData();
-  if (stored.token) {
+  if (stored.token && stored.isValid) {
     cachedAccessToken = stored.token;
     if (stored.expiresAt) cachedExpiresAt = stored.expiresAt;
     return stored.token;
   }
 
-  return cachedAccessToken;
+  // Token is expired or not valid
+  return null;
 };
 
 export async function checkBackendSession(): Promise<{

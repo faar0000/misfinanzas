@@ -47,162 +47,202 @@ export async function handleCargar(req: any, res: any) {
     }
 
     // 2. Discover available sheet tabs in the spreadsheet
-    let targetSheetTitle = 'Transacciones';
+    // 2. Discover available sheet tabs in the spreadsheet
+    let sheetTitles: string[] = [];
     try {
       const meta = await sheets.spreadsheets.get({
         spreadsheetId: targetId,
         fields: 'sheets.properties.title',
       } as any);
-      const sheetTitles: string[] = (meta.data.sheets || [])
-        .map((s) => s.properties?.title)
-        .filter((t): t is string => Boolean(t));
-      if (sheetTitles.includes('Transacciones')) {
-        targetSheetTitle = 'Transacciones';
-      } else {
-        const visibleSheet = sheetTitles.find((t) => !t.startsWith('_') && !t.includes('Backup'));
-        if (visibleSheet) targetSheetTitle = visibleSheet;
-      }
+      sheetTitles = (meta.data.sheets || [])
+        .map((s: any) => s.properties?.title)
+        .filter((t: any): t is string => Boolean(t));
     } catch (metaErr) {
       console.warn('Error obteniendo pestañas de la hoja:', metaErr);
     }
 
-    // 3. Read rows from target sheet (including header row)
+    // Build prioritized candidate list of sheets to search for transactions
+    const candidateSheets: string[] = [];
+    // Prioritize sheets named 'Transacciones' or containing 'transac'
+    const txMatch = sheetTitles.find((t) => t.toLowerCase() === 'transacciones' || t.toLowerCase().includes('transac'));
+    if (txMatch) candidateSheets.push(txMatch);
+
+    // Add sheets mentioning movimientos, gastos, registros, operac
+    sheetTitles.forEach((t) => {
+      const lower = t.toLowerCase();
+      if (!candidateSheets.includes(t) && (lower.includes('movimiento') || lower.includes('gasto') || lower.includes('registro') || lower.includes('operac'))) {
+        candidateSheets.push(t);
+      }
+    });
+
+    // Add standard defaults like 'Hoja 1', 'Sheet1'
+    sheetTitles.forEach((t) => {
+      const lower = t.toLowerCase();
+      if (!candidateSheets.includes(t) && (lower.startsWith('hoja') || lower.startsWith('sheet'))) {
+        candidateSheets.push(t);
+      }
+    });
+
+    // Add any remaining visible sheet (excluding _DataBackup, Resumen, Dashboard)
+    sheetTitles.forEach((t) => {
+      const lower = t.toLowerCase();
+      if (!candidateSheets.includes(t) && !lower.startsWith('_') && !lower.includes('backup') && !lower.includes('resumen') && !lower.includes('dashboard')) {
+        candidateSheets.push(t);
+      }
+    });
+
+    // Fallback: if list is empty, include whatever sheets exist
+    if (candidateSheets.length === 0 && sheetTitles.length > 0) {
+      candidateSheets.push(sheetTitles[0]);
+    } else if (candidateSheets.length === 0) {
+      candidateSheets.push('Transacciones');
+    }
+
+    // 3. Read rows from candidate sheets until transactions are found
     let sheetTransactions: any[] = [];
-    try {
-      const txRes = await sheets.spreadsheets.values.get({
-        spreadsheetId: targetId,
-        range: `${targetSheetTitle}!A1:Z2000`,
-      });
-      const rawRows: string[][] = txRes.data.values || [];
-
-      if (rawRows.length > 0) {
-        let idCol = 0;
-        let dateCol = 1;
-        let typeCol = 2;
-        let amountCol = 3;
-        let methodCol = 4;
-        let quotaCol = 5;
-        let monthlyQuotaCol = 6;
-        let alertCol = 7;
-        let freeMoneyCol = 8;
-        let detailCol = 9;
-        let userMsgCol = 10;
-        let fixedCol = 11;
-        let freqCol = 12;
-
-        const firstRow = rawRows[0] || [];
-        const hasHeaderKeywords = firstRow.some((cell) => {
-          const str = String(cell || '').toLowerCase();
-          return str.includes('fecha') || str.includes('monto') || str.includes('tipo') || str.includes('detalle') || str.includes('id');
+    for (const sheetName of candidateSheets) {
+      try {
+        const safeRange = `'${sheetName.replace(/'/g, "''")}'!A1:Z2000`;
+        const txRes = await sheets.spreadsheets.values.get({
+          spreadsheetId: targetId,
+          range: safeRange,
         });
+        const rawRows: string[][] = txRes.data.values || [];
 
-        let dataRows = rawRows;
-        if (hasHeaderKeywords) {
-          firstRow.forEach((cell, idx) => {
-            const h = String(cell || '').toLowerCase().trim();
-            if (h === 'id') idCol = idx;
-            else if (h.includes('fecha') || h.includes('date')) dateCol = idx;
-            else if (h.includes('tipo operac') || (h.includes('tipo') && !h.includes('gasto'))) typeCol = idx;
-            else if (h.includes('monto total') || h.includes('monto') || h.includes('importe') || h.includes('total')) amountCol = idx;
-            else if (h.includes('m[eé]todo') || h.includes('pago') || h.includes('medio')) methodCol = idx;
-            else if (h === 'cuotas' || h.includes('nro cuota')) quotaCol = idx;
-            else if (h.includes('cuota mensual')) monthlyQuotaCol = idx;
-            else if (h.includes('alerta')) alertCol = idx;
-            else if (h.includes('dinero libre') || h.includes('disponible') || h.includes('restante')) freeMoneyCol = idx;
-            else if (h.includes('detalle') || h.includes('concepto') || h.includes('descrip') || h.includes('item')) detailCol = idx;
-            else if (h.includes('mensaje') || h.includes('asistente') || h.includes('nota')) userMsgCol = idx;
-            else if (h.includes('fijo') || h.includes('tipo gasto')) fixedCol = idx;
-            else if (h.includes('frecuencia') || h.includes('recurrencia')) freqCol = idx;
+        if (rawRows.length > 0) {
+          let idCol = 0;
+          let dateCol = 1;
+          let typeCol = 2;
+          let amountCol = 3;
+          let methodCol = 4;
+          let quotaCol = 5;
+          let monthlyQuotaCol = 6;
+          let alertCol = 7;
+          let freeMoneyCol = 8;
+          let detailCol = 9;
+          let userMsgCol = 10;
+          let fixedCol = 11;
+          let freqCol = 12;
+
+          const firstRow = rawRows[0] || [];
+          const hasHeaderKeywords = firstRow.some((cell) => {
+            const str = String(cell || '').toLowerCase();
+            return str.includes('fecha') || str.includes('monto') || str.includes('tipo') || str.includes('detalle') || str.includes('id') || str.includes('concepto');
           });
-          dataRows = rawRows.slice(1);
-        }
 
-        sheetTransactions = dataRows
-          .filter((row) => row && row.some((cell) => cell && String(cell).trim() !== ''))
-          .map((row, rowIdx) => {
-            const rawId = (row[idCol] || '').toString().trim();
-            const id = rawId && rawId.length > 2 ? rawId : `tx-backend-${Date.now()}-${rowIdx}`;
-            const fecha = row[dateCol] || new Date().toISOString().split('T')[0];
-            const tipo_operacion = (row[typeCol] || '').toString().toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
-            const monto_total = parseCleanAmount(row[amountCol]);
-            const rawMetodo = (row[methodCol] || 'EFECTIVO').toString().toUpperCase().trim();
-            const metodo_pago = rawMetodo.includes('CREDITO')
-              ? 'CREDITO'
-              : rawMetodo.includes('DEBITO')
-              ? 'DEBITO'
-              : 'EFECTIVO';
+          let dataRows = rawRows;
+          if (hasHeaderKeywords) {
+            firstRow.forEach((cell, idx) => {
+              const h = String(cell || '').toLowerCase().trim();
+              if (h === 'id') idCol = idx;
+              else if (h.includes('fecha') || h.includes('date')) dateCol = idx;
+              else if (h.includes('tipo operac') || (h.includes('tipo') && !h.includes('gasto'))) typeCol = idx;
+              else if (h.includes('monto total') || h.includes('monto') || h.includes('importe') || h.includes('total')) amountCol = idx;
+              else if (h.includes('m[eé]todo') || h.includes('pago') || h.includes('medio')) methodCol = idx;
+              else if (h === 'cuotas' || h.includes('nro cuota')) quotaCol = idx;
+              else if (h.includes('cuota mensual')) monthlyQuotaCol = idx;
+              else if (h.includes('alerta')) alertCol = idx;
+              else if (h.includes('dinero libre') || h.includes('disponible') || h.includes('restante')) freeMoneyCol = idx;
+              else if (h.includes('detalle') || h.includes('concepto') || h.includes('descrip') || h.includes('item')) detailCol = idx;
+              else if (h.includes('mensaje') || h.includes('asistente') || h.includes('nota')) userMsgCol = idx;
+              else if (h.includes('fijo') || h.includes('tipo gasto')) fixedCol = idx;
+              else if (h.includes('frecuencia') || h.includes('recurrencia')) freqCol = idx;
+            });
+            dataRows = rawRows.slice(1);
+          }
 
-            const cuotas = parseInt(row[quotaCol] || '1', 10) || 1;
-            const monto_cuota_mensual =
-              parseCleanAmount(row[monthlyQuotaCol]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
-            const alerta_ahorro_comprometido =
-              (row[alertCol] || '').toString().toUpperCase().includes('SÍ') || (row[alertCol] || '').toString().toUpperCase().includes('SI');
-            const dinero_libre_restante = parseCleanAmount(row[freeMoneyCol]);
-            const detailStr = (row[detailCol] || '').toString().trim();
-            const mensaje_usuario = (row[userMsgCol] || 'Transacción sincronizada desde Google Sheets.').toString().trim();
+          const parsedRows = dataRows
+            .filter((row) => row && row.some((cell) => cell && String(cell).trim() !== ''))
+            .map((row, rowIdx) => {
+              const rawId = (row[idCol] || '').toString().trim();
+              const id = rawId && rawId.length > 2 ? rawId : `tx-backend-${Date.now()}-${rowIdx}`;
+              const fecha = row[dateCol] || new Date().toISOString().split('T')[0];
+              const tipo_operacion = (row[typeCol] || '').toString().toUpperCase().includes('INGRESO') ? 'INGRESO' : 'GASTO';
+              const monto_total = parseCleanAmount(row[amountCol]);
+              const rawMetodo = (row[methodCol] || 'EFECTIVO').toString().toUpperCase().trim();
+              const metodo_pago = rawMetodo.includes('CREDITO')
+                ? 'CREDITO'
+                : rawMetodo.includes('DEBITO')
+                ? 'DEBITO'
+                : 'EFECTIVO';
 
-            let items: any[] = [
-              {
-                concepto: detailStr || 'Operación',
-                monto: monto_total,
-                categoria_principal: 'Alimentación y Dieta',
-                subcategoria: 'General',
-              },
-            ];
+              const cuotas = parseInt(row[quotaCol] || '1', 10) || 1;
+              const monto_cuota_mensual =
+                parseCleanAmount(row[monthlyQuotaCol]) || (cuotas > 0 ? monto_total / cuotas : monto_total);
+              const alerta_ahorro_comprometido =
+                (row[alertCol] || '').toString().toUpperCase().includes('SÍ') || (row[alertCol] || '').toString().toUpperCase().includes('SI');
+              const dinero_libre_restante = parseCleanAmount(row[freeMoneyCol]);
+              const detailStr = (row[detailCol] || '').toString().trim();
+              const mensaje_usuario = (row[userMsgCol] || 'Transacción sincronizada desde Google Sheets.').toString().trim();
 
-            if (detailStr && detailStr.includes(' | ')) {
-              const splitParts = detailStr.split(' | ');
-              items = splitParts.map((p) => {
-                const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
-                if (match) {
-                  return {
-                    concepto: match[1].trim() || 'Ítem',
-                    categoria_principal: match[2].trim() || 'Alimentación y Dieta',
-                    subcategoria: 'General',
-                    monto: parseCleanAmount(match[3]) || monto_total / splitParts.length,
-                  };
-                }
-                return {
-                  concepto: p.trim(),
-                  monto: monto_total / splitParts.length,
+              let items: any[] = [
+                {
+                  concepto: detailStr || 'Operación',
+                  monto: monto_total,
                   categoria_principal: 'Alimentación y Dieta',
                   subcategoria: 'General',
-                };
-              });
-            }
+                },
+              ];
 
-            const rawTipoGasto = (row[fixedCol] || '').toString().trim().toUpperCase();
-            const rawFrecuencia = (row[freqCol] || '').toString().trim().toUpperCase();
-            let es_gasto_fijo: boolean | undefined = undefined;
-            if (rawTipoGasto.includes('FIJO')) {
-              es_gasto_fijo = true;
-            } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
-              es_gasto_fijo = false;
-            }
-            let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
-            if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
-              frecuencia_recurrencia = rawFrecuencia;
-            }
+              if (detailStr && detailStr.includes(' | ')) {
+                const splitParts = detailStr.split(' | ');
+                items = splitParts.map((p) => {
+                  const match = p.match(/^(.*?)\s*\((.*?):\s*(?:S\/\.?|\$|€|USD|PEN)?\s*([\d,.]+)\)$/i);
+                  if (match) {
+                    return {
+                      concepto: match[1].trim() || 'Ítem',
+                      categoria_principal: match[2].trim() || 'Alimentación y Dieta',
+                      subcategoria: 'General',
+                      monto: parseCleanAmount(match[3]) || monto_total / splitParts.length,
+                    };
+                  }
+                  return {
+                    concepto: p.trim(),
+                    monto: monto_total / splitParts.length,
+                    categoria_principal: 'Alimentación y Dieta',
+                    subcategoria: 'General',
+                  };
+                });
+              }
 
-            return {
-              id,
-              fecha,
-              tipo_operacion,
-              monto_total,
-              metodo_pago,
-              cuotas,
-              monto_cuota_mensual,
-              alerta_ahorro_comprometido,
-              dinero_libre_restante,
-              items,
-              mensaje_usuario,
-              ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
-              ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
-            };
-          });
+              const rawTipoGasto = (row[fixedCol] || '').toString().trim().toUpperCase();
+              const rawFrecuencia = (row[freqCol] || '').toString().trim().toUpperCase();
+              let es_gasto_fijo: boolean | undefined = undefined;
+              if (rawTipoGasto.includes('FIJO')) {
+                es_gasto_fijo = true;
+              } else if (rawTipoGasto.includes('ÚNICO') || rawTipoGasto.includes('UNICO') || rawTipoGasto.includes('PUNTUAL')) {
+                es_gasto_fijo = false;
+              }
+              let frecuencia_recurrencia: 'MENSUAL' | 'PUNTUAL' | undefined = undefined;
+              if (rawFrecuencia === 'MENSUAL' || rawFrecuencia === 'PUNTUAL') {
+                frecuencia_recurrencia = rawFrecuencia;
+              }
+
+              return {
+                id,
+                fecha,
+                tipo_operacion,
+                monto_total,
+                metodo_pago,
+                cuotas,
+                monto_cuota_mensual,
+                alerta_ahorro_comprometido,
+                dinero_libre_restante,
+                items,
+                mensaje_usuario,
+                ...(es_gasto_fijo !== undefined ? { es_gasto_fijo } : {}),
+                ...(frecuencia_recurrencia !== undefined ? { frecuencia_recurrencia } : {}),
+              };
+            });
+
+          if (parsedRows.length > 0) {
+            sheetTransactions = parsedRows;
+            break;
+          }
+        }
+      } catch (sheetErr) {
+        console.warn(`Error leyendo pestaña '${sheetName}':`, sheetErr);
       }
-    } catch (sheetErr) {
-      console.warn('Error leyendo pestaña de transacciones:', sheetErr);
     }
 
     // 4. Merge backup metadata with physical sheet rows

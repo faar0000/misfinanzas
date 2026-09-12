@@ -182,8 +182,14 @@ export function getAuthenticatedClients(req: any, res: any) {
       },
       values: {
         get: async (params: { spreadsheetId: string; range: string }) => {
+          let safeRange = params.range;
+          if (safeRange.includes('!') && !safeRange.startsWith("'")) {
+            const [sheetPart, ...cellParts] = safeRange.split('!');
+            const cellPart = cellParts.join('!');
+            safeRange = `'${sheetPart.replace(/'/g, "''")}'!${cellPart}`;
+          }
           const data = await authenticatedFetch(
-            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(params.range)}`
+            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(safeRange)}`
           );
           return { data };
         },
@@ -193,9 +199,15 @@ export function getAuthenticatedClients(req: any, res: any) {
           valueInputOption?: string;
           requestBody: any;
         }) => {
+          let safeRange = params.range;
+          if (safeRange.includes('!') && !safeRange.startsWith("'")) {
+            const [sheetPart, ...cellParts] = safeRange.split('!');
+            const cellPart = cellParts.join('!');
+            safeRange = `'${sheetPart.replace(/'/g, "''")}'!${cellPart}`;
+          }
           const opt = params.valueInputOption || 'USER_ENTERED';
           const data = await authenticatedFetch(
-            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(params.range)}?valueInputOption=${opt}`,
+            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(safeRange)}?valueInputOption=${opt}`,
             {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
@@ -205,8 +217,14 @@ export function getAuthenticatedClients(req: any, res: any) {
           return { data };
         },
         clear: async (params: { spreadsheetId: string; range: string }) => {
+          let safeRange = params.range;
+          if (safeRange.includes('!') && !safeRange.startsWith("'")) {
+            const [sheetPart, ...cellParts] = safeRange.split('!');
+            const cellPart = cellParts.join('!');
+            safeRange = `'${sheetPart.replace(/'/g, "''")}'!${cellPart}`;
+          }
           const data = await authenticatedFetch(
-            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(params.range)}:clear`,
+            `https://sheets.googleapis.com/v4/spreadsheets/${params.spreadsheetId}/values/${encodeURIComponent(safeRange)}:clear`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
